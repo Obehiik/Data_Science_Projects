@@ -1,0 +1,124 @@
+/* Reset default browser styles */
+body, h1, h2, h3, p {
+    margin: 0;
+    padding: 0;
+    font-family: 'Times New Roman', Times, serif;
+    line-height: 1.6; /* Adjust line height for readability */
+    color: #333; /* Dark text for better readability */
+}
+
+/* Body styles */
+body {
+    background-color: #f8f9fa;
+    padding: 20px;
+}
+
+/* Container styles */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Header styles */
+.header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.header h1 {
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.header p {
+    font-size: 1em;
+    color: #666;
+}
+
+/* Main content styles */
+.main-content {
+    margin-top: 20px;
+}
+
+/* Table of contents styles */
+.toc {
+    background-color: #e9ecef;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.toc h2 {
+    font-size: 1.5em;
+    margin-bottom: 10px;
+}
+
+/* Section styles */
+.section {
+    margin-bottom: 30px;
+}
+
+/* Paragraph styles */
+p {
+    margin-bottom: 1em; /* Adds space after each paragraph */
+}
+
+/* Link styles */
+a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Footer styles */
+.footer {
+    text-align: center;
+    font-size: 0.8em;
+    color: #999;
+    margin-top: 20px;
+}
+
+/* Code block styles */
+pre {
+    background-color: #f7f7f9;
+    padding: 10px;
+    border-radius: 5px;
+    overflow: auto;
+}
+
+code {
+    font-family: 'Courier New', Courier, monospace;
+}
+
+/* Table styles */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    font-size: 0.9em; /* Reduced font size */
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 8px; /* Reduced padding */
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+tr:hover {
+    background-color: #e9ecef;
+}

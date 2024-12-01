@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/1220427/d1dc365d6b9f44eb8039885429532290
+bundleId: https://api.rpubs.com/api/v1/document/1220427/d1dc365d6b9f44eb8039885429532290
+url: http://rpubs.com/Winnifredik/1220427
+version: 1

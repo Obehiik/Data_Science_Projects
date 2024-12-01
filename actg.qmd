@@ -1,0 +1,109 @@
+---
+title: "Comparing Dual and Triple HIV-1 Reverse Transcriptase Inhibitor Regimens on CD4 Counts in AIDS Patients: A Longitudinal Analysis"
+format: html
+editor: visual
+---
+
+```{r echo=FALSE}
+# Load necessary libraries
+library(labelled)   # labeling data
+library(rstatix)    # summary statistics
+library(ggpubr)     # convenient summary statistics and plots
+library(GGally)     # advanced plots
+library(car)        # useful for ANOVA/Wald tests
+library(Epi)        # easy CI for model coefficients/predictions
+library(lme4)       # linear mixed-effects models
+library(lmerTest)   # tests for linear mixed-effects models
+library(emmeans)    # marginal means
+library(multcomp)   # CI for linear combinations of model coefficients
+library(geepack)    # generalized estimating equations
+library(ggeffects)  # marginal effects, adjusted predictions
+library(gt)         # nice tables
+library(tidyverse)  # for data manipulation, visualization, and more
+library(readr)      # to read CSV files
+library(nlme)       # for mixed-effects models
+library(reshape2)   # data reshaping
+library(ggplot2)    # for data visualization
+library(tidyr)      # for tidying data
+library(dplyr)      # data manipulation
+library(kableExtra) # enhanced tables
+library(corrplot)   # for correlation matrix visualization
+library(joineR)     # joint modeling of longitudinal and survival data
+library(MASS)       # for statistical functions
+library(lattice)    # for trellis graphics
+library(gtsummary)  # for summary tables
+
+# Set the theme for ggplot
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+# Load the data
+actg <- read_csv("actg193a (1).csv")
+head(actg)
+```
+
+# Introduction
+
+The data are from a randomized, double-blind, study of AIDS patients with
+
+advanced immune suppression (CD4 counts of less than or equal to 50 cells/mm\^3).  Patients in AIDS Clinical Trial Group (ACTG) Study 193A were randomized to dual or triple combinations of HIV-1 reverse transcriptase inhibitors.  Specifically, patients were randomized to one of four daily regimens containing 600mg of zidovudine: zidovudine alternating monthly with 400mg didanosine; zidovudine plus 2.25mg of zalcitabine; zidovudine plus 400mg of didanosine; or zidovudine plus 400mg of didanosine plus 400mg of nevirapine (triple therapy).
+
+Measurements of CD4 counts were scheduled to be collected at baseline and at
+
+8-week intervals during follow-up. However, the CD4 count data are unbalanced
+
+due to mistimed measurements and missing data that resulted from skipped visits and dropout. The number of measurements of CD4 counts during the first 40 weeks of follow-up varied from 1 to 9, with a median of 4.
+
+The response variable is the log transformed CD4 counts, log(CD4 counts + 1),
+
+available on 1309 patients.
+
+The categorical variable Treatment is coded
+
+ The variable Week represents time since baseline (in weeks).
+
+Variable List:
+
+id: Subject ID
+
+trt: Treatment (1 = zidovudine alternating monthly with 400mg didanosine, 2 = zidovudine plus 2.25mg of zalcitabine, 3 = zidovudine plus 400mg of didanosine, and 4 = zidovudine plus 400mg of didanosine plus 400mg of nevirapine.)
+
+age: Age (years)
+
+sex: Sex at birth (1=M, 0=F)
+
+week: Week since baseline
+
+logcd4: log(CD4 count + 1).
+
+### Project Goal
+
+# Methods
+
+## Data Description
+
+## Data Preparation
+
+```{r echo=FALSE}
+actg_new<-actg|>mutate_at(vars(trt, sex), as.factor)
+actg_new$sex<-factor(actg_new$sex, levels = c("1", "0"), labels = c("M", "F"))
+actg_new$trt <- fct_recode(actg_new$trt,
+  "Zidovudine + Didanosine (Alternating)" = "1",
+  "Zidovudine + Zalcitabine" = "2",
+  "Zidovudine + Didanosine" = "3",
+  "Zidovudine + Didanosine + Nevirapine" = "4"
+)
+
+```
+
+## Exploratory Data Analysis
+
+```{r echo=FALSE}
+summary<-actg_new|>group_by(trt)|>get_summary_stats(logcd4, show=c("n", "min", "max", "mean", "sd"))
+summary
+```
+
+## Statistical Analysis
+
+# Results
+
+# Discussion

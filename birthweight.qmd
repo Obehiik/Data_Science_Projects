@@ -1,0 +1,51 @@
+---
+title: "Longitudinal Analysis on the Effects of Maternal mage on Infant Birth Weight"
+format: html
+editor: visual
+---
+
+```{r echo=FALSE}
+library(labelled)   # labeling data
+library(rstatix)    # summary statistics
+library(ggpubr)     # convenient summary statistics and plots
+library(GGally)
+library(ggplot2)
+library(htmlTable)
+library(car)        # useful for anova/wald test
+library(Epi)        # easy getting CI for model coef/pred
+library(lme4)       # linear mixed-effects models
+library(lmerTest)   # test for linear mixed-effects models
+library(emmeans)    # marginal means
+library(multcomp)   # CI for linear combinations of model coef
+library(geepack)    # generalized estimating equations
+library(ggeffects)  # marginal effects, adjusted predictions
+library(gt)         # nice tables
+
+library(tidyverse)  # for everything (data manipulation, visualization, coding, and more)
+theme_set(theme_minimal() + theme(legend.position = "bottom")) # theme for ggplot
+# Load the data
+cdc_birthwt <- read_csv("cdc birthwt (1).csv")
+```
+
+# Introduction
+
+In a U.S. Centers for Disease Control study, conducted in the state of Georgia from 1980 to 1992, linked data on live births to the same mother were obtained (Adams et al., 1997). This dataset contains a subset of data restricted to 878 mothers for whom five births were identified. 
+
+The main variables of interest are maternal mage (the mother's mage at each birth) and infant birth weight.
+
+Note that because each mother had five infant births, but at different maternal mages, maternal mage is a within-subject covariate.
+
+Variable List:
+
+mid:Mother ID
+
+border: Birth Order
+
+bweight: Birth Weight (in grams)
+
+mage: Maternal mage (years)
+
+cid: Child ID
+
+# Methods
+
