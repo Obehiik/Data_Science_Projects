@@ -1,0 +1,659 @@
+---
+title: "Wrongfully Convicted: Uncovering the Stories Behind U.S. Exonerations"
+author: "Obehi Winnifred Ikpea"
+format:
+  dashboard:
+    scrolling: true
+    theme: flatly
+    nav-buttons: 
+      - icon: github
+        href: https://github.com/Obehiik/Data_Science_Projects
+        aria-label: Github
+      - icon: linkedin
+        href: https://www.linkedin.com/in/obehi-ikpea-7b860a1b9/
+        aria-label: Linkedin
+
+---
+
+```{r}
+#| label: load-packages and data preparation
+#| message: false
+library(tidyverse)
+library(readr)
+library(naniar)
+library(lubridate)
+library(janitor)
+library(ggthemes)
+library(usmap)
+library(viridis)
+library(ggh4x)
+library(gtsummary)
+### 🔹 Load & Clean Data
+publicspreadsheet <- read_csv("publicspreadsheet.csv") |> clean_names()
+
+project_data <- publicspreadsheet |>
+  mutate(
+    conviction_date = as_date(date_of_1st_conviction, format = "%m/%d/%Y"),
+    exoneration_date = as_date(date_of_exoneration, format = "%m/%d/%Y"),
+    int = interval(conviction_date, exoneration_date),
+    time_to_exoneration = round(time_length(int, "year"), 2)
+  )
+
+### 🔹 Classify Crime Types
+project_data <- project_data |>
+  mutate(
+    crime_type = case_when(
+      worst_crime_display %in% c("Murder", "Accessory to Murder", "Attempted Murder", "Manslaughter", 
+                                 "Assault", "Attempt, Violent", "Kidnapping", "Sexual Assault", 
+                                 "Child Sex Abuse", "Child Abuse", "Dependent Adult Abuse", 
+                                 "Other Violent Felony", "Other Violent Misdemeanor", 
+                                 "Menacing", "Threats", "Stalking", "Robbery") ~ "Person Crimes",
+      worst_crime_display %in% c("Theft", "Burglary/Unlawful Entry", "Arson", "Destruction of Property", 
+                                 "Possession of Stolen Property") ~ "Property Crimes",
+      worst_crime_display %in% c("Drug Possession or Sale", "Weapon Possession or Sale", 
+                                 "Immigration", "Supporting Terrorism", "Traffic Offense") ~ "Society Crimes",
+      worst_crime_display %in% c("Fraud", "Bribery", "Tax Evasion/Fraud", "Forgery", 
+                                 "Failure to Pay Child Support") ~ "White-collar Crimes",
+      worst_crime_display %in% c("Obstruction of Justice", "Official Misconduct", "Perjury", 
+                                 "Filing a False Report", "Sex Offender Registration", 
+                                 "Military Justice Offense") ~ "Justice System Crimes",
+      TRUE ~ "Other Crimes"
+    )
+  )
+
+### 🔹 Recode State and Jurisdiction
+federal_map <- c(
+  "Fed-CA" = "California", "Fed-TX" = "Texas", "Fed-NY" = "New York",
+  "Fed-FL" = "Florida", "Fed-IL" = "Illinois", "Fed-MA" = "Massachusetts",
+  "Fed-WA" = "Washington", "Fed-MD" = "Maryland", "Fed-PA" = "Pennsylvania",
+  "Fed-VA" = "Virginia", "Fed-MI" = "Michigan", "Fed-NJ" = "New Jersey",
+  "Fed-CT" = "Connecticut", "Fed-OK" = "Oklahoma", "Fed-TN" = "Tennessee",
+  "Fed-OH" = "Ohio", "Fed-DE" = "Delaware", "Fed-MN" = "Minnesota",
+  "Fed-AZ" = "Arizona", "Fed-MT" = "Montana", "Fed-NV" = "Nevada",
+  "Fed-AL" = "Alabama", "Fed-NM" = "New Mexico", "Fed-KY" = "Kentucky",
+  "Fed-LA" = "Louisiana", "Fed-ND" = "North Dakota", "Fed-SD" = "South Dakota",
+  "Fed-DC" = "District of Columbia", "District of Columbia" = "District of Columbia",
+  "Fed-Military" = NA, "Puerto Rico" = NA, "Guam" = NA
+)
+
+valid_states <- state.name
+
+project_data_clean <- project_data |>
+  mutate(
+    corrected_state = case_when(
+      state %in% valid_states ~ state,
+      state %in% names(federal_map) ~ federal_map[state],
+      TRUE ~ NA_character_
+    ),
+    jurisdiction = case_when(
+      state %in% names(federal_map) ~ "Federal",
+      state %in% valid_states ~ "State",
+      TRUE ~ NA_character_
+    ),
+    state_abbr = state.abb[match(corrected_state, state.name)],
+    cluster_id = paste0(jurisdiction, "_", state_abbr)
+  ) 
+
+### 🔹 Race Recoding
+project_data_clean$race <- dplyr::recode(project_data_clean$race,
+                                  Asian = "Asian",
+                                  Black = "Black",
+                                  `Don't Know` = "Other",
+                                  Hispanic = "Hispanic",
+                                  `Native American` = "Native American",
+                                  White = "White",
+                                  Other = "Other")
+
+### 🔹 Age Groups
+project_data_clean$age_group <- case_when(
+  project_data_clean$age <= 14 ~ "Childhood (0–14)",
+  project_data_clean$age >= 15 & project_data_clean$age <= 19 ~ "Adolescence (15–19)",
+  project_data_clean$age >= 20 & project_data_clean$age <= 29 ~ "Early Adulthood (20–29)",
+  project_data_clean$age >= 30 & project_data_clean$age <= 39 ~ "Mid Adulthood (30–39)",
+  TRUE ~ "Older Adulthood (40+)"
+)
+project_data_clean$age_group <- factor(
+  project_data_clean$age_group,
+  levels = c("Childhood (0–14)",
+             "Adolescence (15–19)",
+             "Early Adulthood (20–29)",
+             "Mid Adulthood (30–39)",
+             "Older Adulthood (40+)")
+)
+
+
+project_data_clean$exoneration_year<-year(project_data$exoneration_date)
+
+project_data_clean$conviction_year<-year(project_data$conviction_date)
+project_data_clean<-project_data_clean|>mutate_if(is.character, as.factor)
+project_data_clean$sex<-relevel(project_data_clean$sex, ref="Male")
+project_data_clean<-project_data_clean|>select(age, age_group, sex, race, jurisdiction,crime_type, corrected_state,  conviction_year, exoneration_year, time_to_exoneration, state=state_abbr)|>drop_na()
+
+```
+
+# About Project
+## Row {.flow}
+
+::: {.card title="About Project"}
+This project provides comprehensive exploratory analyses of the demographic and crime characteristics of wrongfully convicted and subsequently exonerated individuals across the United States. The visualizations highlight patterns in age, race, sex, crime types, and jurisdiction, revealing important insights into who is most affected by wrongful convictions.
+
+In addition to these characteristics, we investigated the associations between demographics and crime types to explore how patterns of wrongful convictions vary across different groups. We also implemented trend analyses to examine how the duration between initial conviction and exoneration has changed over time — from the first recorded year of exoneration in 1989 to the most recent in 2024.
+
+After data preparation, the dataset used in these analyses consists of **3,425** individuals, drawn from the National Registry of Exonerations.
+
+To facilitate clearer analysis, individual offenses listed under `worst_crime_display` were grouped into broader categories based on the nature and legal context of each crime:
+
+- **Person Crimes**: Harm or threat to individuals — e.g., murder, assault, sexual offenses, kidnapping  
+- **Property Crimes**: Theft or damage to property — e.g., burglary, arson, possession of stolen goods  
+- **Society Crimes**: Harm to societal order — e.g., drug or weapon offenses, immigration violations  
+- **White-Collar Crimes**: Financial or non-violent crimes — e.g., fraud, bribery, tax evasion, forgery  
+- **Justice System Crimes**: Obstruction of legal processes — e.g., perjury, official misconduct  
+- **Other Crimes**: Offenses not captured by the above categories  
+
+This classification highlights broader trends in the types of crimes most commonly associated with wrongful convictions.
+
+Data Source: [The National Registry of Exonerations](https://www.law.umich.edu/special/exoneration/Pages/about.aspx)
+
+:::
+## Value Boxes {height="35%"}
+
+```{r}
+#| label: calculate-values
+lowest_exoneration_duration <- project_data_clean |>
+  filter(time_to_exoneration == min(time_to_exoneration)) |>
+  distinct(time_to_exoneration) |>
+  pull(time_to_exoneration)
+highest_exoneration_duration <- project_data_clean |>
+  filter(time_to_exoneration == max(time_to_exoneration)) |>
+  distinct(time_to_exoneration) |>
+  pull(time_to_exoneration)
+average_exoneration_duration <- project_data_clean |>
+  summarize(mean_duration = mean(time_to_exoneration, na.rm = TRUE)) |>
+  pull(mean_duration)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Lowest Exoneration Duration"
+#| icon: arrow-down-circle
+#| color: success
+list(
+  value = paste0(lowest_exoneration_duration, " years"),
+  caption = "Shortest time from conviction to exoneration"
+)
+
+```
+
+```{r}
+#| content: valuebox
+#| title: "Highest Exoneration Duration"
+#| icon: arrow-up-circle
+#| color: danger
+list(
+  value = paste0(highest_exoneration_duration, " years"),
+  caption = "Longest time from conviction to exoneration"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Average Exoneration Duration"
+#| icon: calculator
+#| color: secondary
+list(
+  value = paste0(round(average_exoneration_duration, 1), " years"),
+  caption = "Average time from conviction to exoneration"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Total States Analyzed"
+#| icon: map
+#| color: primary
+list(
+value=paste0(length(unique(project_data_clean$corrected_state)), " States")
+)
+```
+
+
+
+
+# Distributions and Trends {orientation="rows"}
+## Row {height="50%"}
+
+### Age Distribution
+```{r}
+#| title: Age Distribution
+#| label: age-distribution
+mean_age <- mean(project_data_clean$age)
+ggplot(project_data_clean, aes(x = age, fill = ..count..)) +
+  geom_histogram(color = "black", bins = 30) +
+  geom_vline(aes(xintercept = mean_age), color = "red", linetype = "dashed", size = 0.5) +
+  annotate("text", x = mean_age + 5, y = 50, label = paste("Mean =", round(mean_age, 2)), 
+           color = "black", size = 3) +
+  scale_fill_viridis_c(option = "E") +
+  labs(x = "Age of Convicted Then Exonerated Individuals (years)",
+       y = "Frequency",
+       title = "Distribution of Age of Convicted Then Exonerated Individuals",
+       caption = "Source: Public Exoneration Data") +
+ theme_minimal() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none")
+```
+
+
+### Race Distribution
+```{r}
+#| title: Race Distribution
+#| label: race-distribution
+project_data_clean |>
+  count(race, name = "race_frequency") |>
+  mutate(perc = scales::percent(race_frequency/sum(race_frequency), accuracy = .1, trim = F)) |>
+  ggplot(aes(x = fct_rev(fct_reorder(race, race_frequency)), y = race_frequency, fill = race)) +
+  geom_col() +
+  geom_text(aes(label = perc), vjust = 0, hjust = 1, size = 3) +
+  scale_fill_viridis_d(option = "E") +
+  labs(x = "Race",
+       y = "Frequency",
+       title = "Race Distribution of Exonerated Individuals") +
+theme_minimal() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Sex Distribution
+```{r}
+#| title: Sex Distribution
+#| label: sex-distribution
+project_data_clean |>
+  count(sex, name = "sex_frequency") |>
+  mutate(perc = scales::percent(sex_frequency/sum(sex_frequency), accuracy = .1, trim = F)) |>
+  ggplot(aes(x = fct_rev(fct_reorder(sex, sex_frequency)), y = sex_frequency, fill = sex)) +
+  geom_col() +
+  geom_text(aes(label = perc), vjust = 0, hjust = 1, size = 3) +
+  scale_fill_viridis_d(option = "D") +
+  labs(x = "Sex",
+       y = "Frequency",
+       title = "Sex Distribution of Exonerated Individuals") +
+theme_minimal() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none")
+```
+
+### Crime Type Distribution
+```{r}
+#| title: Crime Type Distribution
+#| label: crime-type-distribution
+project_data_clean |>
+  count(crime_type, name = "crime_frequency") |>
+  mutate(perc = scales::percent(crime_frequency/sum(crime_frequency), accuracy = .1, trim = F)) |>
+  ggplot(aes(x = fct_rev(fct_reorder(crime_type, crime_frequency)), y = crime_frequency, fill = crime_type)) +
+  geom_col() +
+  geom_text(aes(label = perc), vjust = 0, hjust = 1, size = 3) +
+  scale_fill_viridis_d(option = "C") +
+  labs(x = "Crime Type",
+       y = "Frequency",
+       title = "Distribution of Crime Types Among Exonerated Individuals") +
+theme_minimal() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Age Group
+```{r}
+#| title: Age Group Distribution
+#| label: age-group-distribution
+project_data_clean |>
+  count(age_group, name = "age_frequency") |>
+  mutate(perc = scales::percent(age_frequency/sum(age_frequency), accuracy = .1, trim = F)) |>
+  ggplot(aes(x = fct_rev(fct_reorder(age_group, age_frequency)), y = age_frequency, fill = age_group)) +
+  geom_col() +
+   geom_text(aes(label = perc), vjust = 0, hjust = 1, size = 3) +
+  scale_fill_viridis_d(option = "A") +
+  labs(x = "Age Group",
+       y = "Frequency",
+       title = "Distribution by Age Groups") +
+theme_minimal() +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none")
+```
+
+##
+```{r}
+#| label: jurisdiction-distribution
+#| title: "Jurisdiction Distribution"
+project_data_clean |>
+  count(jurisdiction, name = "juris_freq") |>
+  mutate(perc = scales::percent(juris_freq / sum(juris_freq), accuracy = 0.1)) |>
+  ggplot(aes(x = fct_rev(fct_reorder(jurisdiction, juris_freq)), y = juris_freq, fill = jurisdiction)) +
+  geom_col() +
+  geom_text(aes(label = perc), vjust = 0, hjust = 1, size = 3) +
+  scale_fill_viridis_d(option = "B") +
+  labs(
+    x = "Jurisdiction Type",
+    y = "Frequency",
+    title = "Distribution by Jurisdiction Type",
+    caption = "Federal vs. State convictions among exonerated individuals"
+  ) +
+theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+###
+
+```{r}
+#| label: annual-exonerations
+#| title: "Annual Exonerations"
+project_data_clean |>
+  count(exoneration_year) |>
+  ggplot(aes(x = exoneration_year, y = n)) +
+  geom_point(size = 0.5, color = "red") +
+  geom_line(color = "red") +
+  scale_x_continuous(breaks = seq(1896, 2024, 8)) +
+  labs(
+    x = "Year",
+    y = "Number of Exonerations",
+    title = "Exoneration Counts Over Time"
+  ) +
+theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+```
+
+###
+
+```{r}
+#| label: annual-convictions
+#| title: "Annual Convictions"
+project_data_clean |>
+  count(conviction_year) |>
+  ggplot(aes(x = conviction_year, y = n)) +
+  geom_point(size = 0.5, color = "steelblue") +
+  geom_line(color = "steelblue") +
+  scale_x_continuous(breaks = seq(1896, 2024, 8)) +
+  scale_y_continuous(breaks = seq(0, 150, 20)) +
+  labs(
+    x = "Year",
+    y = "Number of Convictions",
+    title = "Conviction Counts Over Time"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+```
+
+### 
+```{r}
+#| label: time-to-exoneration-distribution
+#| title: "Distribution of Time to Exoneration"
+mean_time <- mean(project_data_clean$time_to_exoneration)
+ggplot(project_data_clean, aes(x = time_to_exoneration, fill = ..count..)) +
+  geom_histogram(color = "black", bins = 30) +
+   geom_vline(aes(xintercept = mean_time), color = "red", linetype = "dashed", size = 0.5) +
+  annotate("text", x = mean_time + 5, y = 50, label = paste("Mean =", round(mean_time, 2)), 
+           color = "black", size = 3)+
+  scale_fill_viridis_c(option = "D") +
+  labs(
+    x = "Years from Conviction to Exoneration",
+    y = "Frequency",
+    title = "Distribution of Time to Exoneration from First Conviction",
+    caption = "Source: National Registry of Exonerations"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 10, face = "bold.italic"),
+    legend.position = "bottom"
+  )
+```
+
+
+
+# Associations
+
+```{r}
+# Define Okabe-Ito color palette
+okabe_ito <- c(
+  "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7", "#999999"
+)
+```
+
+## Exonerations Over Time {orientation="rows"}
+
+
+### Trends in Exonerations by Sex
+
+```{r}
+#| label: exonerations-by-sex
+#| title: "Trends in Exonerations by Sex"
+project_data_clean |>
+  count(exoneration_year, sex) |>
+  ggplot(aes(x = exoneration_year, y = n, color = sex)) +
+  geom_point(size = 0.5) +
+  geom_line() +
+  guides(color = guide_legend(reverse = TRUE)) +
+  scale_x_continuous(breaks = seq(1896, 2024, 8)) +
+  labs(x = "Year of Exoneration", y = "Number of Exonerations", color = "Sex") +
+  scale_color_manual(values = okabe_ito) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "bottom", legend.direction = "horizontal")
+```
+
+### Trends in Exonerations by Race
+```{r}
+#| label: exonerations-by-race
+#| title: "Trends in Exonerations by Race"
+project_data_clean |>
+  count(exoneration_year, race) |>
+  ggplot(aes(x = exoneration_year, y = n, color = race)) +
+  geom_point(size = 0.5) +
+  geom_line() +
+  guides(color = guide_legend(reverse = TRUE)) +
+  scale_x_continuous(breaks = seq(1896, 2024, 8)) +
+  labs(x = "Year of Exoneration", y = "Number of Exonerations", color = "Race") +
+  scale_color_manual(values = okabe_ito) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "bottom", legend.direction = "horizontal")
+```
+### Trends in Exonerations by Crime Type
+
+```{r}
+#| label: exonerations-by-crime-type
+#| title: "Trends in Exonerations by Crime Type"
+project_data_clean |>
+  count(exoneration_year, crime_type) |>
+  ggplot(aes(x = exoneration_year, y = n, color = crime_type)) +
+  geom_point(size = 0.5) +
+  geom_line() +
+  guides(color = guide_legend(reverse = TRUE)) +
+  scale_x_continuous(breaks = seq(1896, 2024, 8)) +
+  labs(x = "Year of Exoneration", y = "Number of Exonerations", color = "Crime Type") +
+  scale_color_manual(values = okabe_ito) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "bottom", legend.direction = "horizontal")
+```
+### Trends in Exonerations by Jurisdiction
+```{r}
+#| label: exonerations-by-jurisdiction
+#| title: "Annual Exonerations by Jurisdiction"
+project_data_clean |>
+  count(exoneration_year, jurisdiction) |>
+  ggplot(aes(x = exoneration_year, y = n, color = jurisdiction)) +
+  geom_point(size = 0.5) +
+  geom_line() +
+  guides(color = guide_legend(reverse = TRUE)) +
+  scale_x_continuous(breaks = seq(1989, 2024, 5)) +
+  labs(
+    x = "Year of Exoneration",
+    y = "Number of Exonerations",
+    color = "Jurisdiction",
+    title = "Annual Exonerations by Jurisdiction Type"
+  ) +
+  scale_color_manual(values = c("#1b9e77", "#d95f02")) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+```
+
+
+## Crime Type Distributions {orientation="rows"}
+
+### "Distribution of Crime Type by Age Group"
+
+```{r}
+#| label: crime-type-by-age-group-distribution
+#| title: "Distribution of Crime Type by Age Group"
+project_data_clean |>
+  count(age_group, crime_type, name = "age_frequency") |>
+  ggplot(aes(x = age_group, y = age_frequency, fill = crime_type)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Age Group", y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "right")
+```
+
+### "Distribution of Crime Type by Sex"
+```{r}
+#| label: crime-type-by-sex-distribution
+#| title: "Distribution of Crime Type by Sex"
+project_data_clean |>
+  count(sex, crime_type, name = "sex_frequency") |>
+  ggplot(aes(x = sex, y = sex_frequency, fill = crime_type)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Sex", y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "right")
+```
+
+### "Distribution of Crime Type by Race"
+```{r}
+#| label: crime-type-by-race-distribution
+#| title: "Distribution of Crime Type by Race"
+project_data_clean |>
+  count(race, crime_type, name = "race_frequency") |>
+  ggplot(aes(x = race, y = race_frequency, fill = crime_type)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Race", y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), legend.position = "right")
+```
+
+## Duration by Demographics {orientation="rows"}
+
+### Years to Exoneration by Age Group
+
+```{r}
+#| label: exoneration-by-age-group
+#| title: "Years to Exoneration by Age Group"
+ggplot(project_data_clean, aes(x = age_group, y = time_to_exoneration, fill = age_group)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Age Group", y = "Years to Exoneration") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+
+### Years to Exoneration  by Crime Type
+```{r}
+#| label: exoneration-by-crime-type
+#| title: "Years to Exoneration  by Crime Type"
+ggplot(project_data_clean, aes(x = crime_type, y = time_to_exoneration, fill = crime_type)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Crime Type", y = "Years to Exoneration") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+
+### Years to Exoneration by Race
+```{r}
+#| label: exoneration-by-race
+#| title: "Years to Exoneration by Race"
+ggplot(project_data_clean, aes(x = race, y = time_to_exoneration, fill = race)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Race", y = "Years to Exoneration") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+
+## Map
+
+```{r}
+#| label: map-exoneration-by-state
+#| title: "Avg. Time to Exoneration by State"
+#| fig-width: 10
+#| fig-height: 6
+
+state_avg <- project_data_clean |>
+  group_by(state) |>
+  summarize(avg_exon_time = mean(time_to_exoneration, na.rm = TRUE), .groups = "drop")
+
+plot_usmap(
+  data = state_avg,
+  values = "avg_exon_time",
+  regions = "states",
+  color = "white",
+  linewidth = 0.1,
+  labels = TRUE
+) +
+  scale_fill_viridis_c(option = "C", name = "Avg. Exoneration\nDuration (years)") +
+  labs(
+    title = "Average Time to Exoneration by State",
+    caption = "Source: National Registry of Exonerations"
+  ) +
+  theme(legend.position = "right")
+```
+
+
+# Summary Table {orientation="columns"}
+
+## Column
+
+```{r}
+#| label: summary-table-by-crime-type
+project_data_clean |>
+  tbl_summary(
+    include = c(sex, time_to_exoneration, race, age_group, jurisdiction),
+    by = crime_type,
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    label = list(
+      race = "Race",
+      age_group = "Age group",
+      jurisdiction = "Jurisdiction",
+      sex = "Sex",
+      crime_type = "Type of Crime",
+      time_to_exoneration = "Time to Exoneration (years)"
+    ),
+    missing_text = "(Missing)"
+  ) |>
+  bold_labels() |>
+  italicize_labels() |>
+  modify_header(label ~ "**Variable**") |>
+  modify_caption("**Table 1: Demographic and Case Characteristics Stratified by Crime Type**") |>
+  modify_spanning_header(c("stat_1", "stat_2", "stat_3", "stat_4") ~ "**Crime Category**") 
+```
