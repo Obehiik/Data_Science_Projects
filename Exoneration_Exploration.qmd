@@ -12,7 +12,6 @@ format:
       - icon: linkedin
         href: https://www.linkedin.com/in/obehi-ikpea-7b860a1b9/
         aria-label: Linkedin
-
 ---
 
 ```{r}
@@ -28,7 +27,6 @@ library(usmap)
 library(viridis)
 library(ggh4x)
 library(gtsummary)
-### 🔹 Load & Clean Data
 publicspreadsheet <- read_csv("publicspreadsheet.csv") |> clean_names()
 
 project_data <- publicspreadsheet |>
@@ -58,8 +56,17 @@ project_data <- project_data |>
                                  "Filing a False Report", "Sex Offender Registration", 
                                  "Military Justice Offense") ~ "Justice System Crimes",
       TRUE ~ "Other Crimes"
+    ),
+    crime_type = factor(
+      crime_type,
+      levels = c("Property Crimes", "Person Crimes", "White-collar Crimes", 
+                 "Society Crimes", "Justice System Crimes", "Other Crimes")
     )
   )
+
+# Set the reference level (optional: use the most frequent or baseline category)
+project_data$crime_type <- relevel(project_data$crime_type, ref = "Property Crimes")
+
 
 ### 🔹 Recode State and Jurisdiction
 federal_map <- c(
@@ -78,9 +85,9 @@ federal_map <- c(
 
 valid_states <- state.name
 
-project_data_clean <- project_data |>
+longitudinal_data_clean <- project_data |>
   mutate(
-    corrected_state = case_when(
+    state = case_when(
       state %in% valid_states ~ state,
       state %in% names(federal_map) ~ federal_map[state],
       TRUE ~ NA_character_
@@ -90,48 +97,71 @@ project_data_clean <- project_data |>
       state %in% valid_states ~ "State",
       TRUE ~ NA_character_
     ),
-    state_abbr = state.abb[match(corrected_state, state.name)],
+    state_abbr = state.abb[match(state, state.name)],
     cluster_id = paste0(jurisdiction, "_", state_abbr)
   ) 
 
 ### 🔹 Race Recoding
-project_data_clean$race <- dplyr::recode(project_data_clean$race,
-                                  Asian = "Asian",
-                                  Black = "Black",
-                                  `Don't Know` = "Other",
-                                  Hispanic = "Hispanic",
-                                  `Native American` = "Native American",
-                                  White = "White",
-                                  Other = "Other")
+longitudinal_data_clean$race <- dplyr::recode(longitudinal_data_clean$race,
+  "Asian" = "Asian",
+  "Black" = "Black",
+  "Hispanic" = "Hispanic",
+  "White" = "White",
+  "Native American" = "Native American",
+  "Don't Know" = "Other",
+  "Other" = "Other"
+)
+
+# Optional: Convert to factor with order and reference level
+longitudinal_data_clean$race <- factor(
+  longitudinal_data_clean$race,
+  levels = c("White", "Black", "Hispanic", "Asian", "Native American", "Other")
+)
+
+
+
 
 ### 🔹 Age Groups
-project_data_clean$age_group <- case_when(
-  project_data_clean$age <= 14 ~ "Childhood (0–14)",
-  project_data_clean$age >= 15 & project_data_clean$age <= 19 ~ "Adolescence (15–19)",
-  project_data_clean$age >= 20 & project_data_clean$age <= 29 ~ "Early Adulthood (20–29)",
-  project_data_clean$age >= 30 & project_data_clean$age <= 39 ~ "Mid Adulthood (30–39)",
+longitudinal_data_clean$age_group <- case_when(
+  longitudinal_data_clean$age <= 14 ~ "Childhood (0–14)",
+  longitudinal_data_clean$age >= 15 & longitudinal_data_clean$age <= 19 ~ "Adolescence (15–19)",
+  longitudinal_data_clean$age >= 20 & longitudinal_data_clean$age <= 29 ~ "Early Adulthood (20–29)",
+  longitudinal_data_clean$age >= 30 & longitudinal_data_clean$age <= 39 ~ "Mid Adulthood (30–39)",
   TRUE ~ "Older Adulthood (40+)"
 )
-project_data_clean$age_group <- factor(
-  project_data_clean$age_group,
-  levels = c("Childhood (0–14)",
-             "Adolescence (15–19)",
-             "Early Adulthood (20–29)",
-             "Mid Adulthood (30–39)",
-             "Older Adulthood (40+)")
+
+# Convert to ordered factor for modeling and plotting
+longitudinal_data_clean$age_group <- factor(
+  longitudinal_data_clean$age_group,
+  levels = c(
+    "Childhood (0–14)",
+    "Adolescence (15–19)",
+    "Early Adulthood (20–29)",
+    "Mid Adulthood (30–39)",
+    "Older Adulthood (40+)"
+  )
 )
 
+longitudinal_data_clean$exoneration_year<-year(project_data$exoneration_date)
 
-project_data_clean$exoneration_year<-year(project_data$exoneration_date)
+longitudinal_data_clean$conviction_year<-year(project_data$conviction_date)
+longitudinal_data_clean<-longitudinal_data_clean|>mutate_if(is.character, as.factor)
+longitudinal_data_clean$sex<-relevel(longitudinal_data_clean$sex, ref="Male")
+longitudinal_data_clean$race <- relevel(longitudinal_data_clean$race, ref = "Black")
+longitudinal_data_clean$jurisdiction <- relevel(longitudinal_data_clean$jurisdiction, ref = "State")
+longitudinal_data_clean$age_group <- relevel(longitudinal_data_clean$age_group, ref = "Early Adulthood (20–29)")
+longitudinal_data_clean$crime_type <- relevel(longitudinal_data_clean$crime_type, ref = "Person Crimes")
 
-project_data_clean$conviction_year<-year(project_data$conviction_date)
-project_data_clean<-project_data_clean|>mutate_if(is.character, as.factor)
-project_data_clean$sex<-relevel(project_data_clean$sex, ref="Male")
-project_data_clean<-project_data_clean|>select(age, age_group, sex, race, jurisdiction,crime_type, corrected_state,  conviction_year, exoneration_year, time_to_exoneration, state=state_abbr)|>drop_na()
+longitudinal_data_clean<-longitudinal_data_clean|>select(age, age_group, sex, race, jurisdiction,crime_type, state=state,  conviction_year, exoneration_year, time_to_exoneration,worst_crime_display)|>drop_na()
 
+longitudinal_data_clean<-longitudinal_data_clean|>
+  mutate(years_since_1989 = exoneration_year - 1989)
+
+longitudinal_data_clean<-longitudinal_data_clean|>arrange(years_since_1989, state)
 ```
 
 # About Project
+
 ## Row {.flow}
 
 ::: {.card title="About Project"}
@@ -139,35 +169,35 @@ This project provides comprehensive exploratory analyses of the demographic and 
 
 In addition to these characteristics, we investigated the associations between demographics and crime types to explore how patterns of wrongful convictions vary across different groups. We also implemented trend analyses to examine how the duration between initial conviction and exoneration has changed over time — from the first recorded year of exoneration in 1989 to the most recent in 2024.
 
-After data preparation, the dataset used in these analyses consists of **3,425** individuals, drawn from the National Registry of Exonerations.
+After data preparation, the dataset used in these analyses consists of **3450** individuals, drawn from the National Registry of Exonerations.
 
 To facilitate clearer analysis, individual offenses listed under `worst_crime_display` were grouped into broader categories based on the nature and legal context of each crime:
 
-- **Person Crimes**: Harm or threat to individuals — e.g., murder, assault, sexual offenses, kidnapping  
-- **Property Crimes**: Theft or damage to property — e.g., burglary, arson, possession of stolen goods  
-- **Society Crimes**: Harm to societal order — e.g., drug or weapon offenses, immigration violations  
-- **White-Collar Crimes**: Financial or non-violent crimes — e.g., fraud, bribery, tax evasion, forgery  
-- **Justice System Crimes**: Obstruction of legal processes — e.g., perjury, official misconduct  
-- **Other Crimes**: Offenses not captured by the above categories  
+-   **Person Crimes**: Harm or threat to individuals — e.g., murder, assault, sexual offenses, kidnapping\
+-   **Property Crimes**: Theft or damage to property — e.g., burglary, arson, possession of stolen goods\
+-   **Society Crimes**: Harm to societal order — e.g., drug or weapon offenses, immigration violations\
+-   **White-Collar Crimes**: Financial or non-violent crimes — e.g., fraud, bribery, tax evasion, forgery\
+-   **Justice System Crimes**: Obstruction of legal processes — e.g., perjury, official misconduct\
+-   **Other Crimes**: Offenses not captured by the above categories
 
 This classification highlights broader trends in the types of crimes most commonly associated with wrongful convictions.
 
 Data Source: [The National Registry of Exonerations](https://www.law.umich.edu/special/exoneration/Pages/about.aspx)
-
 :::
+
 ## Value Boxes {height="35%"}
 
 ```{r}
 #| label: calculate-values
-lowest_exoneration_duration <- project_data_clean |>
+lowest_exoneration_duration <- longitudinal_data_clean |>
   filter(time_to_exoneration == min(time_to_exoneration)) |>
   distinct(time_to_exoneration) |>
   pull(time_to_exoneration)
-highest_exoneration_duration <- project_data_clean |>
+highest_exoneration_duration <- longitudinal_data_clean |>
   filter(time_to_exoneration == max(time_to_exoneration)) |>
   distinct(time_to_exoneration) |>
   pull(time_to_exoneration)
-average_exoneration_duration <- project_data_clean |>
+average_exoneration_duration <- longitudinal_data_clean |>
   summarize(mean_duration = mean(time_to_exoneration, na.rm = TRUE)) |>
   pull(mean_duration)
 ```
@@ -212,22 +242,21 @@ list(
 #| icon: map
 #| color: primary
 list(
-value=paste0(length(unique(project_data_clean$corrected_state)), " States")
+value=paste0(length(unique(longitudinal_data_clean$state)), " States")
 )
 ```
 
-
-
-
 # Distributions and Trends {orientation="rows"}
+
 ## Row {height="50%"}
 
 ### Age Distribution
+
 ```{r}
 #| title: Age Distribution
 #| label: age-distribution
-mean_age <- mean(project_data_clean$age)
-ggplot(project_data_clean, aes(x = age, fill = ..count..)) +
+mean_age <- mean(longitudinal_data_clean$age)
+ggplot(longitudinal_data_clean, aes(x = age, fill = ..count..)) +
   geom_histogram(color = "black", bins = 30) +
   geom_vline(aes(xintercept = mean_age), color = "red", linetype = "dashed", size = 0.5) +
   annotate("text", x = mean_age + 5, y = 50, label = paste("Mean =", round(mean_age, 2)), 
@@ -242,12 +271,12 @@ ggplot(project_data_clean, aes(x = age, fill = ..count..)) +
         legend.position = "none")
 ```
 
-
 ### Race Distribution
+
 ```{r}
 #| title: Race Distribution
 #| label: race-distribution
-project_data_clean |>
+longitudinal_data_clean |>
   count(race, name = "race_frequency") |>
   mutate(perc = scales::percent(race_frequency/sum(race_frequency), accuracy = .1, trim = F)) |>
   ggplot(aes(x = fct_rev(fct_reorder(race, race_frequency)), y = race_frequency, fill = race)) +
@@ -264,10 +293,11 @@ theme_minimal() +
 ```
 
 ### Sex Distribution
+
 ```{r}
 #| title: Sex Distribution
 #| label: sex-distribution
-project_data_clean |>
+longitudinal_data_clean |>
   count(sex, name = "sex_frequency") |>
   mutate(perc = scales::percent(sex_frequency/sum(sex_frequency), accuracy = .1, trim = F)) |>
   ggplot(aes(x = fct_rev(fct_reorder(sex, sex_frequency)), y = sex_frequency, fill = sex)) +
@@ -283,10 +313,11 @@ theme_minimal() +
 ```
 
 ### Crime Type Distribution
+
 ```{r}
 #| title: Crime Type Distribution
 #| label: crime-type-distribution
-project_data_clean |>
+longitudinal_data_clean |>
   count(crime_type, name = "crime_frequency") |>
   mutate(perc = scales::percent(crime_frequency/sum(crime_frequency), accuracy = .1, trim = F)) |>
   ggplot(aes(x = fct_rev(fct_reorder(crime_type, crime_frequency)), y = crime_frequency, fill = crime_type)) +
@@ -303,10 +334,11 @@ theme_minimal() +
 ```
 
 ### Age Group
+
 ```{r}
 #| title: Age Group Distribution
 #| label: age-group-distribution
-project_data_clean |>
+longitudinal_data_clean |>
   count(age_group, name = "age_frequency") |>
   mutate(perc = scales::percent(age_frequency/sum(age_frequency), accuracy = .1, trim = F)) |>
   ggplot(aes(x = fct_rev(fct_reorder(age_group, age_frequency)), y = age_frequency, fill = age_group)) +
@@ -321,11 +353,12 @@ theme_minimal() +
         legend.position = "none")
 ```
 
-##
+## 
+
 ```{r}
 #| label: jurisdiction-distribution
 #| title: "Jurisdiction Distribution"
-project_data_clean |>
+longitudinal_data_clean |>
   count(jurisdiction, name = "juris_freq") |>
   mutate(perc = scales::percent(juris_freq / sum(juris_freq), accuracy = 0.1)) |>
   ggplot(aes(x = fct_rev(fct_reorder(jurisdiction, juris_freq)), y = juris_freq, fill = jurisdiction)) +
@@ -345,12 +378,13 @@ theme_minimal() +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 ```
-###
+
+### 
 
 ```{r}
 #| label: annual-exonerations
 #| title: "Annual Exonerations"
-project_data_clean |>
+longitudinal_data_clean |>
   count(exoneration_year) |>
   ggplot(aes(x = exoneration_year, y = n)) +
   geom_point(size = 0.5, color = "red") +
@@ -368,12 +402,12 @@ theme_minimal() +
   )
 ```
 
-###
+### 
 
 ```{r}
 #| label: annual-convictions
 #| title: "Annual Convictions"
-project_data_clean |>
+longitudinal_data_clean |>
   count(conviction_year) |>
   ggplot(aes(x = conviction_year, y = n)) +
   geom_point(size = 0.5, color = "steelblue") +
@@ -393,11 +427,12 @@ project_data_clean |>
 ```
 
 ### 
+
 ```{r}
 #| label: time-to-exoneration-distribution
 #| title: "Distribution of Time to Exoneration"
-mean_time <- mean(project_data_clean$time_to_exoneration)
-ggplot(project_data_clean, aes(x = time_to_exoneration, fill = ..count..)) +
+mean_time <- mean(longitudinal_data_clean$time_to_exoneration)
+ggplot(longitudinal_data_clean, aes(x = time_to_exoneration, fill = ..count..)) +
   geom_histogram(color = "black", bins = 30) +
    geom_vline(aes(xintercept = mean_time), color = "red", linetype = "dashed", size = 0.5) +
   annotate("text", x = mean_time + 5, y = 50, label = paste("Mean =", round(mean_time, 2)), 
@@ -416,8 +451,6 @@ ggplot(project_data_clean, aes(x = time_to_exoneration, fill = ..count..)) +
   )
 ```
 
-
-
 # Associations
 
 ```{r}
@@ -430,13 +463,12 @@ okabe_ito <- c(
 
 ## Exonerations Over Time {orientation="rows"}
 
-
 ### Trends in Exonerations by Sex
 
 ```{r}
 #| label: exonerations-by-sex
 #| title: "Trends in Exonerations by Sex"
-project_data_clean |>
+longitudinal_data_clean |>
   count(exoneration_year, sex) |>
   ggplot(aes(x = exoneration_year, y = n, color = sex)) +
   geom_point(size = 0.5) +
@@ -450,10 +482,11 @@ project_data_clean |>
 ```
 
 ### Trends in Exonerations by Race
+
 ```{r}
 #| label: exonerations-by-race
 #| title: "Trends in Exonerations by Race"
-project_data_clean |>
+longitudinal_data_clean |>
   count(exoneration_year, race) |>
   ggplot(aes(x = exoneration_year, y = n, color = race)) +
   geom_point(size = 0.5) +
@@ -465,12 +498,13 @@ project_data_clean |>
   theme_minimal() +
   theme(plot.title = element_text(face = "bold"), legend.position = "bottom", legend.direction = "horizontal")
 ```
+
 ### Trends in Exonerations by Crime Type
 
 ```{r}
 #| label: exonerations-by-crime-type
 #| title: "Trends in Exonerations by Crime Type"
-project_data_clean |>
+longitudinal_data_clean |>
   count(exoneration_year, crime_type) |>
   ggplot(aes(x = exoneration_year, y = n, color = crime_type)) +
   geom_point(size = 0.5) +
@@ -482,11 +516,13 @@ project_data_clean |>
   theme_minimal() +
   theme(plot.title = element_text(face = "bold"), legend.position = "bottom", legend.direction = "horizontal")
 ```
+
 ### Trends in Exonerations by Jurisdiction
+
 ```{r}
 #| label: exonerations-by-jurisdiction
 #| title: "Annual Exonerations by Jurisdiction"
-project_data_clean |>
+longitudinal_data_clean |>
   count(exoneration_year, jurisdiction) |>
   ggplot(aes(x = exoneration_year, y = n, color = jurisdiction)) +
   geom_point(size = 0.5) +
@@ -509,7 +545,6 @@ project_data_clean |>
 
 ```
 
-
 ## Crime Type Distributions {orientation="rows"}
 
 ### "Distribution of Crime Type by Age Group"
@@ -517,7 +552,7 @@ project_data_clean |>
 ```{r}
 #| label: crime-type-by-age-group-distribution
 #| title: "Distribution of Crime Type by Age Group"
-project_data_clean |>
+longitudinal_data_clean |>
   count(age_group, crime_type, name = "age_frequency") |>
   ggplot(aes(x = age_group, y = age_frequency, fill = crime_type)) +
   geom_bar(position = "dodge", stat = "identity") +
@@ -528,10 +563,11 @@ project_data_clean |>
 ```
 
 ### "Distribution of Crime Type by Sex"
+
 ```{r}
 #| label: crime-type-by-sex-distribution
 #| title: "Distribution of Crime Type by Sex"
-project_data_clean |>
+longitudinal_data_clean |>
   count(sex, crime_type, name = "sex_frequency") |>
   ggplot(aes(x = sex, y = sex_frequency, fill = crime_type)) +
   geom_bar(position = "dodge", stat = "identity") +
@@ -542,10 +578,11 @@ project_data_clean |>
 ```
 
 ### "Distribution of Crime Type by Race"
+
 ```{r}
 #| label: crime-type-by-race-distribution
 #| title: "Distribution of Crime Type by Race"
-project_data_clean |>
+longitudinal_data_clean |>
   count(race, crime_type, name = "race_frequency") |>
   ggplot(aes(x = race, y = race_frequency, fill = crime_type)) +
   geom_bar(position = "dodge", stat = "identity") +
@@ -562,7 +599,7 @@ project_data_clean |>
 ```{r}
 #| label: exoneration-by-age-group
 #| title: "Years to Exoneration by Age Group"
-ggplot(project_data_clean, aes(x = age_group, y = time_to_exoneration, fill = age_group)) +
+ggplot(longitudinal_data_clean, aes(x = age_group, y = time_to_exoneration, fill = age_group)) +
   geom_violin() +
   geom_boxplot(width = 0.1, fill = "white") +
   scale_fill_manual(values = okabe_ito) +
@@ -571,11 +608,12 @@ ggplot(project_data_clean, aes(x = age_group, y = time_to_exoneration, fill = ag
   theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 ```
 
-### Years to Exoneration  by Crime Type
+### Years to Exoneration by Crime Type
+
 ```{r}
 #| label: exoneration-by-crime-type
 #| title: "Years to Exoneration  by Crime Type"
-ggplot(project_data_clean, aes(x = crime_type, y = time_to_exoneration, fill = crime_type)) +
+ggplot(longitudinal_data_clean, aes(x = crime_type, y = time_to_exoneration, fill = crime_type)) +
   geom_violin() +
   geom_boxplot(width = 0.1, fill = "white") +
   scale_fill_manual(values = okabe_ito) +
@@ -585,10 +623,11 @@ ggplot(project_data_clean, aes(x = crime_type, y = time_to_exoneration, fill = c
 ```
 
 ### Years to Exoneration by Race
+
 ```{r}
 #| label: exoneration-by-race
 #| title: "Years to Exoneration by Race"
-ggplot(project_data_clean, aes(x = race, y = time_to_exoneration, fill = race)) +
+ggplot(longitudinal_data_clean, aes(x = race, y = time_to_exoneration, fill = race)) +
   geom_violin() +
   geom_boxplot(width = 0.1, fill = "white") +
   scale_fill_manual(values = okabe_ito) +
@@ -605,7 +644,7 @@ ggplot(project_data_clean, aes(x = race, y = time_to_exoneration, fill = race)) 
 #| fig-width: 10
 #| fig-height: 6
 
-state_avg <- project_data_clean |>
+state_avg <- longitudinal_data_clean |>
   group_by(state) |>
   summarize(avg_exon_time = mean(time_to_exoneration, na.rm = TRUE), .groups = "drop")
 
@@ -625,14 +664,13 @@ plot_usmap(
   theme(legend.position = "right")
 ```
 
-
 # Summary Table {orientation="columns"}
 
 ## Column
 
 ```{r}
 #| label: summary-table-by-crime-type
-project_data_clean |>
+longitudinal_data_clean |>
   tbl_summary(
     include = c(sex, time_to_exoneration, race, age_group, jurisdiction),
     by = crime_type,
