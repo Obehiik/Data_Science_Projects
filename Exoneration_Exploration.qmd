@@ -594,6 +594,21 @@ longitudinal_data_clean |>
 
 ## Duration by Demographics {orientation="rows"}
 
+### Years to Exoneration by Sex
+
+```{r}
+#| label: exoneration-by-sex
+#| title: "Years to Exoneration by Sex"
+ggplot(longitudinal_data_clean, aes(x = sex, y = time_to_exoneration, fill = sex)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white") +
+  scale_fill_manual(values = okabe_ito) +
+  labs(x = "Sex", y = "Years to Exoneration") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+
+
 ### Years to Exoneration by Age Group
 
 ```{r}
@@ -636,7 +651,39 @@ ggplot(longitudinal_data_clean, aes(x = race, y = time_to_exoneration, fill = ra
   theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 ```
 
-## Map
+# Geographical Summaries
+
+## Number of Exonerations By State
+
+```{r}
+#| label: map-Number-Exoneration-by-state
+#| title: "Number of Exonerations by State"
+#| fig-width: 10
+#| fig-height: 6
+
+state_count <- longitudinal_data_clean |>
+  count(state)
+
+plot_usmap(
+  data = state_count,
+  values = "n",
+  regions = "states",
+  color = "white",
+  linewidth = 0.1,
+  labels = TRUE
+) +
+  scale_fill_viridis_c(option = "C", name = "Number of Exonerations") +
+  labs(
+    title = "Number of Exonerations by State",
+    caption = "Source: National Registry of Exonerations"
+  ) +
+  theme(legend.position = "right")
+```
+
+
+
+
+## Average Time to Exoneration By State
 
 ```{r}
 #| label: map-exoneration-by-state
@@ -664,7 +711,38 @@ plot_usmap(
   theme(legend.position = "right")
 ```
 
+
 # Summary Table {orientation="columns"}
+
+## Row
+
+```{r}
+#| label: cross-sectional-summary-table
+longitudinal_data_clean |>
+  tbl_summary(
+    include = c(sex, time_to_exoneration, race, age_group, jurisdiction, age, crime_type),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    label = list(
+      race = "Race",
+      age_group = "Age group",
+      age= "Age",
+      crime_type="Crime Type",
+      jurisdiction = "Jurisdiction",
+      sex = "Sex",
+      crime_type = "Type of Crime",
+      time_to_exoneration = "Time to Exoneration (years)"
+    ),
+    missing_text = "(Missing)"
+  ) |>
+  bold_labels() |>
+  italicize_labels() |>
+  modify_header(label ~ "**Variable**") |>
+  modify_caption("**Table 1: Demographic and Case Characteristics of Exonerated Individuals**")
+```
 
 ## Column
 
@@ -692,6 +770,6 @@ longitudinal_data_clean |>
   bold_labels() |>
   italicize_labels() |>
   modify_header(label ~ "**Variable**") |>
-  modify_caption("**Table 1: Demographic and Case Characteristics Stratified by Crime Type**") |>
+  modify_caption("**Table 2: Demographic and Case Characteristics Stratified by Crime Type**") |>
   modify_spanning_header(c("stat_1", "stat_2", "stat_3", "stat_4") ~ "**Crime Category**") 
 ```
