@@ -1,0 +1,914 @@
+---
+title: "Comparative Analysis of Machine Learning Algorithms for Gallstone Disease Classification Using Non-Imaging Features"
+subtitle: "A Machine Learning Approach to Disease Diagnosis"
+author: "Obehi Winnifred Ikpea"
+date: "2025-05-21"
+format:
+  revealjs:
+    theme: beige         # warm, clean background
+    css: styles.css      # your custom serif styling
+    transition: slide    # smooth slide transition
+    slide-number: c/t    # shows current/total slide count
+    toc: true
+    toc-title: "Presentation Overview"
+    toc-depth: 2
+    navigation-mode: linear
+    menu:
+      side: left
+      width: normal
+      numbers: true
+      useTextContentForMissingTitles: true
+    width: 1280
+    height: 720
+    fig-align: center
+    center-title-slide: true
+    code-fold: false
+    code-overflow: wrap
+    code-line-numbers: true
+    code-copy: hover
+    controls: true
+    progress: true
+    hash: true
+    chalkboard:
+      buttons: true
+      chalk-width: 3
+      chalk-effect: 0.25
+    self-contained: false
+    embed-resources: false
+    description: "Comparative analysis of machine learning algorithms for gallstone disease classification"
+editor: visual
+---
+
+## Introduction
+
+-   Gallstone disease is a prevalent condition that affects at least 10% of adults in the United States, with approximately 75% of those affected being female. Gallstones are hardened deposits of bile that form in the gallbladder and can vary in both size and quantity. While the precise reasons for the formation of gallstones are not fully understood, it is believed that they develop when bile contains excess cholesterol or bilirubin or when bile does not empty properly from the gallbladder.
+
+-   Gallstones can arise when the liver secretes more cholesterol than the bile can dissolve, leading to the formation of crystals that may evolve into stones. Additionally, an excess production of bilirubin, a substance produced when the body breaks down red blood cells, can also contribute to gallstone formation. In general, gallstones occur when the bile contains more components than it can effectively dissolve.
+
+-   Several factors can increase the risk of developing gallstone disease, including age, sex, race, physical activity, pregnancy, diet, and certain medical conditions, such as specific blood disorders (like sickle cell anemia and leukemia) and liver diseases. Furthermore, the use of medications that contain estrogen is considered a risk factor for the formation of gallstones.
+
+-   Typically, gallstones do not present any signs or symptoms unless they cause a blockage, making them challenging to detect or diagnose. However, various tests and procedures are available to assess the signs and symptoms associated with this condition. These include abdominal ultrasound, endoscopic ultrasound, blood tests, and several other imaging procedures. Blood tests often reveal complications or diseases related to gallstones alongside results from the abdominal ultrasound.
+
+**Project Objective**
+
+This project focuses on the development and validation of a machine learning model aimed at predicting gallstone disease. It utilizes a comprehensive set of non-imaging clinical data gathered from 319 patients at the Internal Medicine Outpatient Clinic of Ankara VM Medical Park Hospital. By leveraging demographic information, bioimpedance measurements, laboratory results, and comorbidity factors, the goal is to facilitate early detection of gallstone disease in ambulatory care settings.
+
+## Methods
+
+-   Data Description
+
+-   Exploratory Data Analysis
+
+-   Data Pre-processing
+
+-   Exploratory Data Analysis
+
+-   Classification Algorithms
+
+## Data Description
+
+```{r, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(caret)
+library(SmartEDA)
+library(DataExplorer)
+library(janitor)
+library(ggplot2)
+library(ggthemes)
+library(recipes)
+library(kableExtra)
+dataset_uci <- read_excel("dataset-uci.xlsx")
+dataset_uci<-clean_names(dataset_uci)
+# Modeling packages
+library(rpart)       # direct engine for decision tree application
+library(caret)       # meta engine for decision tree application
+
+# Model interpretability packages
+library(rpart.plot)  # for plotting decision trees
+library(vip)         # for feature importance
+library(pdp)         # for feature effects
+library(doParallel)  # for parallel backend to foreach
+library(foreach)     # for parallel processing with for loops
+
+# Modeling packages
+library(caret)       # for general model fitting
+library(rpart)       # for fitting decision trees
+library(ipred)       # for fitting bagged decision trees
+library(ranger)
+library(h2o)
+library(rpart.plot)
+library(rattle)
+library(kableExtra)
+# Set seed for reproducibility
+set.seed(2)
+```
+
+The dataset for this project was collected from the Internal Medicine Outpatient Clinic at Ankara VM Medical Park Hospital. It includes data from 319 individuals and comprises 38 features. These features are categorized into three groups:
+
+1.  **Demographic Features:** Age, sex, height, weight, and Body Mass Index (BMI).\
+2.  **Bioimpedance Features:** Total water, extracellular water, intracellular water, muscle mass, fat mass, protein levels, visceral fat area, and hepatic fat.\
+3.  **Laboratory Features:** Glucose, total cholesterol, high-density lipoprotein (HDL), low-density lipoprotein (LDL), triglycerides, aspartate aminotransferase (AST), alanine aminotransferase (ALT), alkaline phosphatase (ALP), creatinine, glomerular filtration rate (GFR), C-reactive protein (CRP), hemoglobin, and vitamin D levels.\
+4.  **Health Conditions:** Comorbidities, coronary artery disease (CAD), hypothyroidism, high cholesterol (hyperlipidemia), and diabetes mellitus (DM).
+
+This structured approach allows for a comprehensive analysis of the dataset. The data was sourced from the UCI Machine Learning Repository and is complete and balanced.
+
+**Data Splitting**
+
+To ensure the generalizability of the machine learning algorithms, the dataset was divided into training and testing subsets. The training dataset was used to develop feature sets, train various algorithms, and optimize hyperparameters, while the test dataset was used to obtain an unbiased assessment of the model's performance. The dataset was split using the 70%–30% split ratio.
+
+The training dataset consisted of 224 observations and 39 variables, while the test dataset consisted of 95 observations and 39 variables.
+
+```{r}
+set.seed(123)
+index_gallstone<-createDataPartition(dataset_uci$gallstone_status, p=0.7, list=F)
+train_gallstone<-dataset_uci[index_gallstone,]
+test_gallstone<-dataset_uci[-index_gallstone,]
+
+```
+
+## Inital Exploratory Data Analysis
+
+Using the training dataset, we conducted an initial exploratory data analysis to understand the structure and distribution of variables, identify anomalies and outliers, and detect associations. This was done in various process:
+
+**Introducing the Data**
+
+```{r, echo=FALSE}
+kable(DataExplorer::introduce(train_gallstone))
+
+```
+
+```{r}
+DataExplorer::plot_intro(train_gallstone)
+```
+
+-   The training dataset contains 224 observations, 38 features, and a single target variable.
+
+-   The dataset is comprehensive and free of any missing observations or columns.
+
+-   All columns consist entirely of continuous data, likely stemming from the way the variables were coded initially in the software.
+
+## Bar Chart
+
+```{r}
+DataExplorer::plot_bar(train_gallstone)
+
+```
+
+-   The bar chart presented focuses exclusively on the binary variables within the dataset. However, it is important to note that the dataset also contains ordinal and nominal categorical variables, which are not represented in this visualization.
+
+-   The outcome variable **GallStone Status** is balanced.
+
+## Histograms {.scrollable}
+
+```{r hist-part1, fig.width=8, fig.height=4, out.width="80%"}
+DataExplorer::plot_histogram(train_gallstone)
+```
+
+-   Histograms were utilized to visualize the shape of the distribution of the features and target variable.
+
+-   Based on the histogram, skewed distributions were observed, which had the potential to affect prediction accuracy and violate model assumptions.
+
+## Checking Levels of Categorical Variables
+
+```{r}
+kable(train_gallstone |> count(comorbidity) )# (level two and three has only 1 sample size, we can lump)
+kable(train_gallstone |> count(hepatic_fat_accumulation_hfa)) #(level 3 has only 1 sample size: we can fix this)
+```
+
+-   Imbalanced distributions of categorical features:
+    -   The Comorbidity feature is characterized by the presence of only a single value for both the "Two Comorbid" and "Three Comorbid" conditions, which is relatively low in comparison to other categories.
+    -   The Hepatic Fat Accumulation (HFA) feature is similarly represented, with only one observed value at the Grade 4 (severe) level.
+    -   It is important to note that tree-based models are not as impacted by levels with small representation. However,
+
+## Data Preprocessing
+
+Using the **recipe** package, data pre-processing methods involved (in order):
+
+-   Feature Engineering (Numeric Features):
+
+    -   Removing zero and near-zero variance variables, as they offer very little, if any, information to a model.
+
+    -   Minimizing the skewness of the numeric features using the Yeo-Johnson transformation, which is very similar to the Box-Cox, but does not require the input variable to be strictly positive.
+
+    -   Standardizing the features by scaling and centering them so that the numeric variables have zero mean and unit variance, which provides a common comparable unit of measure across all the variables.
+
+-   Feature Engineering (Categorical Features):
+
+    -   Lumping categorical features by combining levels that have few observations into a smaller number of categories.
+
+```{r, echo=FALSE}
+# Data Preparation
+## Wrong, there are discrete columns that have not been correctly accounted for
+##1. Target: presence or abscence of gallstone
+train_gallstone<-train_gallstone |>
+  mutate(gallstone_status=case_when(
+    gallstone_status==0 ~ "1", # Gallstone
+    TRUE ~ "0" # No Gallstone
+  ),comorbidity=case_when(
+    comorbidity %in% c(1,2,3) ~ "1+",
+    TRUE ~ "0" 
+  ),
+  hepatic_fat_accumulation_hfa=case_when(
+    hepatic_fat_accumulation_hfa %in% c(3,4) ~ "3+",
+    hepatic_fat_accumulation_hfa==0 ~ "0",
+    hepatic_fat_accumulation_hfa == 1 ~ "1",
+    TRUE ~ "2" 
+  ))
+
+## Convert the other categorucal variables from numeric to factos
+train_gallstone$gender<-as.factor(train_gallstone$gender)
+train_gallstone$coronary_artery_disease_cad<-as.factor(train_gallstone$coronary_artery_disease_cad)
+train_gallstone$hypothyroidism<-as.factor(train_gallstone$hypothyroidism)
+train_gallstone$hyperlipidemia<-as.factor(train_gallstone$hyperlipidemia)
+train_gallstone$diabetes_mellitus_dm<-as.factor(train_gallstone$diabetes_mellitus_dm)
+
+```
+
+```{r}
+## Apply to test data
+test_gallstone<-test_gallstone |>
+  mutate(gallstone_status=case_when(
+    gallstone_status==0 ~ "1", # Gallstone
+    TRUE ~ "0" # No Gallstone
+  ),comorbidity=case_when(
+    comorbidity %in% c(1,2,3) ~ "1+",
+    TRUE ~ "0" 
+  ),
+  hepatic_fat_accumulation_hfa=case_when(
+    hepatic_fat_accumulation_hfa %in% c(3,4) ~ "3+",
+    hepatic_fat_accumulation_hfa==0 ~ "0",
+    hepatic_fat_accumulation_hfa == 1 ~ "1",
+    TRUE ~ "2" 
+  ))
+
+## Convert the other categorical variables from numeric to factos
+test_gallstone$gender<-as.factor(test_gallstone$gender)
+test_gallstone$coronary_artery_disease_cad<-as.factor(test_gallstone$coronary_artery_disease_cad)
+test_gallstone$hypothyroidism<-as.factor(test_gallstone$hypothyroidism)
+test_gallstone$hyperlipidemia<-as.factor(test_gallstone$hyperlipidemia)
+test_gallstone$diabetes_mellitus_dm<-as.factor(test_gallstone$diabetes_mellitus_dm)
+
+
+```
+
+```{r, echo=FALSE}
+## Let's create a blueprint
+
+preprocess_recipe<-recipe(gallstone_status~., data=train_gallstone) %>%
+  step_zv(all_nominal())  %>%
+   step_nzv(all_nominal())  %>%
+    step_YeoJohnson(all_numeric()) %>%
+ step_center(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), -all_outcomes()) 
+
+# Prepare the recipe with the training data
+prepared_recipe <- prep(preprocess_recipe, training = train_gallstone, verbose = TRUE)
+
+# Apply the recipe to the training data
+train_data_preprocessed <- juice(prepared_recipe)
+train_data_preprocessed$gallstone_status<-recode(train_data_preprocessed$gallstone_status,
+                                                 "1"="Gallstone", "0"= "Healthy")
+# Apply the recipe to the testing data
+test_data_preprocessed <- bake(prepared_recipe, new_data = test_gallstone)
+test_data_preprocessed$gallstone_status<-recode(test_data_preprocessed$gallstone_status,
+                                                 "1"="Gallstone", "0"= "Healthy")
+
+```
+
+## Final Exploratory Analysis: Bar Plots
+
+```{r, fig.width=8, fig.height=4, out.width="80%"}
+DataExplorer::plot_bar(train_data_preprocessed, ggtheme = theme_bw())
+```
+
+The classification of the comorbidity feature has been consolidated from four distinct levels to two. Additionally, the variable related to Hepatic Fat Accumulation (HFA) has been refined, reducing its categorization from five levels to four.
+
+## Final Exploratory Analysis: Histograms {.scrollable}
+
+```{r, fig.width=8, fig.height=4, out.width="80%"}
+DataExplorer::plot_histogram(train_data_preprocessed, ggtheme = theme_bw())
+```
+
+-   All numeric features have been standardized, as evidenced by the x-axis scaling. The skewness of the distributions has been reduced compared to the pre-processed histograms
+
+## Final Exploratory Analysis: Correlation Plot
+
+```{r, fig.width=20, fig.height=18, out.width="100%"}
+DataExplorer::plot_correlation(train_data_preprocessed, 
+                              type = "continuous",
+                              ggtheme = theme_bw(),
+  theme_config = list(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+)
+
+                              
+
+```
+
+-   Multicollinearity is evident among the numeric features, potentially compromising the performance of parametric classification methods.
+
+-   However, the dataset has been preprocessed and ready for training various classifiers.
+
+## Classification Methods
+
+-   Resampling Method
+-   Logistic and Regularized Logistic Regression
+-   Tree Based Methods
+
+### Resampling Method
+
+To assess the generalization performance of the models, we employed 10-fold cross-validation for each classifier. This method randomly partitions the training data into 10 groups or folds of approximately equal size, fits the model on 9 folds, and evaluates model performance on the remaining held-out fold. This process is repeated 10 times, with each fold serving as the validation set once, resulting in 10 estimates of the cross-validation error. The final 10-fold cross-validation estimate is obtained by averaging these 10 validation errors.
+
+## Logistic Regression
+
+-   Logistic regression models the probability that Y belongs to a particular category. In this case, it models the probability of gallstone disease $P(GallstoneStatus=Gallstone|Features)$.
+
+-   This is accomplished using the logistic function: $$p(X) = \frac{e^{\beta_0 + \beta_1X_1 + \beta_2X_2 + \ldots + \beta_pX_p}}{1 + e^{\beta_0 + \beta_1X_1 + \beta_2X_2 + \ldots + \beta_pX_p}}$$
+
+-   This can be rearranged to the following form: $$\log\left(\frac{p(X)}{1-p(X)}\right) = \beta_0 + \beta_1X_1 + \beta_2X_2 + \ldots + \beta_pX_p$$
+
+-   This transformation yields the log-odds or logit function, which represents the linear combination of the predictor variables.
+
+-   The logistic regression model is fitted using the method of maximum likelihood estimation. This method seeks parameter estimates such that the predicted probabilities of the outcome of interest (gallstone disease) using the logistic function correspond as closely as possible to the observed outcomes
+
+-   **Warning**: There was substantial separation between the two classes, leading to unstable parameter estimates in the logistic regression model.
+
+-   To address this issue, we implemented **penalized logistic regression models**.
+
+## Penalized Logistic Regression
+
+-   Penalized logistic regression imposes a penalty parameter that shrinks the coefficient estimates. This penalty is added to the logistic loss function:
+
+$$L_{log} = -\ln(L) = -\sum_{i=1}^{N} \left[ -\ln(1 + e^{(\beta_0+\beta_1x_i)}) + y_i (\beta_0 + \beta_1x_i) \right]$$
+
+-   There are three main approaches for adding penalty parameters to the loss function:
+
+    -   **Ridge Regression**: Controls the estimated coefficients by adding the L2 penalty to the loss function: $L_{log} + \lambda \sum_{j=1}^{p} \beta_j^2$, where the tuning parameter $\lambda$ controls the emphasis given to the penalty term. As $\lambda$ increases, the coefficients shrink toward zero but never reach exactly zero.
+
+    -   **Lasso Regression**: An alternative to Ridge regression that controls the estimated coefficients by adding the L1 penalty to the loss function: $L_{log} + \lambda \sum_{j=1}^{p} |\beta_j|$, where the tuning parameter $\lambda$ controls the emphasis given to the penalty term. As $\lambda$ increases, coefficients can shrink to exactly zero, enabling variable selection. However, the L1 penalty tends to arbitrarily select one variable when predictor variables are highly correlated.
+
+    -   **Elastic Net**: Combines both L1 and L2 penalties to leverage the benefits of both Ridge and Lasso regression. Specifically, it enables effective regularization via the Ridge penalty while maintaining the feature selection characteristics of the Lasso penalty.
+
+        -   We trained the penalized model using a tuneLength parameter of 25, which directs the algorithm to evaluate 25 default values for the alpha and lambda parameters. Using accuracy as the metric for selecting the optimal parameters through 10-fold cross-validation, the final values selected for the model were alpha = 0.5875 and lambda = 0.002656071. This indicates that the model applies a heavier Lasso penalty compared to Ridge.
+
+```{r}
+# Logistic regression model
+glm_mod <- train(
+  gallstone_status ~ .,
+  data = train_data_preprocessed,
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(
+    method = "cv",
+    number = 10
+  )
+)
+
+# Prediction on training data
+log_preds <- predict(
+  glm_mod,
+  newdata = train_data_preprocessed
+)
+conf_matrix_log <- confusionMatrix(
+  log_preds,
+  train_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+
+# Prediction on test data
+log_preds_test <- predict(
+  glm_mod,
+  newdata = test_data_preprocessed
+)
+conf_matrix_log_test <- confusionMatrix(
+  log_preds_test,
+  test_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+
+# Train regularized logistic regression model
+set.seed(2)
+penalized_mod <- train(
+  gallstone_status ~ .,
+  data = train_data_preprocessed,
+  method = "glmnet",
+  family = "binomial",
+  trControl = trainControl(
+    method = "cv",
+    number = 10
+  ),
+  tuneLength = 25
+)
+
+# Predictions on training data for penalized model
+pen_preds <- predict(
+  penalized_mod,
+  newdata = train_data_preprocessed
+)
+conf_matrix_pen <- confusionMatrix(
+  pen_preds,
+  train_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+
+# Predictions on test data for penalized model
+pen_preds_test <- predict(
+  penalized_mod,
+  newdata = test_data_preprocessed
+)
+conf_matrix_pen_test <- confusionMatrix(
+  pen_preds_test,
+  test_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+```
+
+## Decision Tree {.scrollable}
+
+-   Decision trees are non-parametric classification algorithms that work by partitioning the training data into homogeneous subgroups and fitting a simple constant in each subgroup.
+
+-   The trees are built using the recursive binary splitting approach. That is, **they begin** at the top of the tree where all the training data belongs to a single region, and then successively **split** the predictor space, with the main goal of minimizing dissimilarity in the terminal nodes.
+
+-   Using the `rpart()` function, we trained a decision tree on the training dataset, which automatically employs 10-fold cross-validation to assess the performance of different tree sizes by evaluating the error for each complexity parameter (`cp`) value.
+
+```{r}
+set.seed(2)
+
+tree_model <- rpart(
+  gallstone_status ~ ., 
+  data = train_data_preprocessed, 
+  method = "class"
+)
+
+rpart.plot(tree_model)
+
+
+# Generate predictions on training data
+preds <- predict(
+  tree_model, 
+  train_data_preprocessed, 
+  type = "class"
+)
+
+conf_matrix <- confusionMatrix(
+  preds, 
+  train_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+
+# Prediction on the test dataset
+preds_test <- predict(
+  tree_model, 
+  test_data_preprocessed, 
+  type = "class"
+)
+
+conf_matrix_test <- confusionMatrix(
+  preds_test, 
+  test_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+# Get the optimal cp value
+optimal_cp <- tree_model$cptable[
+  which.min(tree_model$cptable[, "xerror"]), 
+  "CP"
+]
+vip(tree_model)
+```
+
+-   Cross-validation **resulted** in an inverted tree-like structure with 8 terminal nodes.
+
+-   The Variable Importance Plot showed **the** 10 most important features in disease classification, most of which were bioimpedance features.
+
+-   However, decision trees tend to overfit the data, leading to poor generalization performance. Also, there is a balance to be achieved in the depth and complexity of the tree to optimize predictive performance on the test data. To find this balance, we utilized the pruning approach.
+
+## Pruned Decision Tree
+
+-   To avoid growing overly complex trees, we applied pruning. This involves growing a very large complex tree, and **pruning** it back to obtain an optimal subtree by using a cost complexity parameter $\alpha$ that penalizes the objective **function**.
+
+-   When fitting the original tree, the `rpart()` function automatically applies a range of cost complexity values, and compares error using **10-fold cross-validation**. **It** selects the value of $\alpha$ that results in the lowest **cross-validation** error.
+
+-   For this model, we observed that $\alpha=0.01818182$ was the optimal cost complexity value, and using this value, we pruned the tree.
+
+-   The result was a decision tree with 4 terminal nodes.
+
+```{r}
+set.seed(2)
+# Get the optimal cp value
+optimal_cp <- tree_model$cptable[
+  which.min(tree_model$cptable[, "xerror"]), 
+  "CP"
+]
+
+# Prune the tree
+pruned_tree <- prune(
+  tree_model, 
+  cp = optimal_cp
+)
+
+# Plot the pruned tree
+rpart.plot(pruned_tree)
+
+# Predict on the training data
+predictions <- predict(
+  pruned_tree, 
+  train_data_preprocessed, 
+  type = "class"
+)
+
+# Create a confusion matrix for training data
+confus_tree <- confusionMatrix(
+  predictions, 
+  train_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+
+# Predict on the test data
+predictions_test <- predict(
+  pruned_tree, 
+  test_data_preprocessed, 
+  type = "class"
+)
+
+# Create a confusion matrix for test data
+confus_tree_test <- confusionMatrix(
+  predictions_test, 
+  test_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+```
+
+## Ensemble Methods
+
+-   While decision trees are relatively straightforward in terms of interpretability and representation, they are prone to high variance, meaning that even a slight change in the training data can lead to significant fluctuations in results. To address this issue, we can introduce some bias to the model to reduce variance. This is achieved through the use of ensemble methods.
+
+-   Ensemble methods involve combining multiple individual decision trees to create a single, potentially more powerful model. In this context, two ensemble techniques will be discussed: Bagging and Random Forests.
+
+## Bagging
+
+Bagging, short for Bootstrap Aggregating, is a modeling technique that involves creating bootstrap samples from the original training data. A decision tree is then fitted to each bootstrap sample, and the final prediction is obtained by selecting the most frequently occurring class among the predictions made by all the individual trees.
+
+```{r}
+## Bagging
+set.seed(2)
+
+tree_bag <- train(
+  gallstone_status ~ .,
+  data = train_data_preprocessed,
+  method = "treebag",
+  trControl = trainControl(
+    method = "cv",
+    number = 10
+  ),
+  importance=T
+  )
+
+tree_bag
+
+# Predict on training data
+predictions_bag <- predict(
+  tree_bag,
+  newdata = train_data_preprocessed
+)
+
+conf_matrix_bag <- confusionMatrix(
+  predictions_bag,
+  train_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+
+# Predict on test data
+predictions_bag_test <- predict(
+  tree_bag,
+  newdata = test_data_preprocessed
+)
+
+conf_matrix_bag_test <- confusionMatrix(
+  predictions_bag_test,
+  test_data_preprocessed$gallstone_status,
+  positive = "Gallstone"
+)
+```
+
+## Random Forest
+
+-   Random forest is a modification of bagging that introduces additional randomness in the tree-growing process, which helps decorrelate the trees. During the bagging process, random forests perform split-variable randomization; each time a split is made, the variables are limited to a random subset of the original features.
+
+-   Two methods were utilized in training the random forest:
+
+    -   Initially, we trained the random forest using the default value for $m_{try}$, which is the hyperparameter that controls the randomization of the split-variable feature. In this case, $m_{try}$ was set to the square root of the number of features, resulting in $m_{try} = \sqrt{35} = 5.91608$.
+
+    -   Subsequently, we conducted a random search across 15 different $m_{try}$ values, and the optimal model was identified as a random forest with $m_{try} = 5$.
+
+```{r}
+set.seed(2)
+
+mtry <- sqrt(ncol(train_data_preprocessed)-1)
+tunegrid <- expand.grid(.mtry = mtry)
+
+# Random Forest with defined mtry
+rfmodel <- train(
+  gallstone_status ~ .,
+  data = train_data_preprocessed,
+  method = "rf",
+  trControl = trainControl(
+    method = "cv",
+    number = 10
+  ),
+  tuneGrid = tunegrid
+)
+
+# Predictions on training dataset
+predictions_rf_train <- predict(
+  rfmodel,
+  newdata = train_data_preprocessed
+)
+
+
+# Create confusion matrices for Random Forest models Train
+conf_matrix_rf_train <- confusionMatrix(
+  predictions_rf_train, 
+  train_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+
+# Predictions on testing dataset
+predictions_rf_test <- predict(
+  rfmodel,
+  newdata = test_data_preprocessed
+)
+
+# Create confusion matrices for Random Forest models
+conf_matrix_rf_test <- confusionMatrix(
+  predictions_rf_test, 
+  test_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+
+```
+
+-   We performed a random search on 15 different $m_{try}$ values, and the optimal model was a random forest with $m_{try} = 5$.
+
+```{r}
+set.seed(2)
+
+# Random Forest with random search
+rfmodel2 <- train(
+  gallstone_status ~ .,
+  data = train_data_preprocessed,
+  method = "rf",
+  trControl = trainControl(
+    method = "cv",
+    number = 10,
+    search = "random"
+  ),
+  tuneLength = 15
+)
+
+predictions_rf_random_train <- predict(
+  rfmodel2,
+  newdata = train_data_preprocessed
+)
+
+
+conf_matrix_rf_random_train <- confusionMatrix(
+  predictions_rf_random_train, 
+  train_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+
+# Predictions on testing dataset
+
+
+predictions_rf_random_test <- predict(
+  rfmodel2,
+  newdata = test_data_preprocessed
+)
+
+conf_matrix_rf_random_test <- confusionMatrix(
+  predictions_rf_random_test, 
+  test_data_preprocessed$gallstone_status, 
+  positive = "Gallstone"
+)
+```
+
+## Performance Assessment
+
+To evaluate the performance of our classifiers on the test data, we compared the following metrics:
+
+-   **Accuracy**: This metric indicates the proportion of total predictions (both positive and negative) that the classifier identified correctly.
+
+-   **Precision**: This measures the accuracy of positive predictions, specifically how many of the predicted positives were actually correct.
+
+-   **Sensitivity**: Also known as recall, this metric measures the model's ability to identify actual positive instances, representing the proportion of true positives detected among all actual positive cases.
+
+-   **Specificity**: This measures the model's ability to identify negative instances accurately.
+
+-   **AUC-ROC Curve**: The area under the ROC curve quantifies the model's ability to differentiate between classes. It provides insight into how effectively the model separates positive cases, such as individuals with gallstone, from negative cases, such as those without the disease, across various threshold levels.
+
+```{r, message=FALSE}
+library(pROC)
+
+# === LOGISTIC ===
+logistic_probs_train <- predict(glm_mod, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+logistic_probs_test  <- predict(glm_mod, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_logistic_train <- roc(train_data_preprocessed$gallstone_status, logistic_probs_train)$auc
+auc_logistic_test  <- roc(test_data_preprocessed$gallstone_status, logistic_probs_test)$auc
+
+# === PENALIZED LOGISTIC ===
+penalized_probs_train <- predict(penalized_mod, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+penalized_probs_test  <- predict(penalized_mod, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_penalized_train <- roc(train_data_preprocessed$gallstone_status, penalized_probs_train)$auc
+auc_penalized_test  <- roc(test_data_preprocessed$gallstone_status, penalized_probs_test)$auc
+
+# === DECISION TREE ===
+tree_probs_train <- predict(tree_model, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+tree_probs_test  <- predict(tree_model, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_tree_train <- roc(train_data_preprocessed$gallstone_status, tree_probs_train)$auc
+auc_tree_test  <- roc(test_data_preprocessed$gallstone_status, tree_probs_test)$auc
+
+# === PRUNED TREE ===
+pruned_probs_train <- predict(pruned_tree, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+pruned_probs_test  <- predict(pruned_tree, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_pruned_train <- roc(train_data_preprocessed$gallstone_status, pruned_probs_train)$auc
+auc_pruned_test  <- roc(test_data_preprocessed$gallstone_status, pruned_probs_test)$auc
+
+# === BAGGING ===
+bagging_probs_train <- predict(tree_bag, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+bagging_probs_test  <- predict(tree_bag, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_bagging_train <- roc(train_data_preprocessed$gallstone_status, bagging_probs_train)$auc
+auc_bagging_test  <- roc(test_data_preprocessed$gallstone_status, bagging_probs_test)$auc
+
+# === RANDOM FOREST (Grid) ===
+rf_grid_probs_train <- predict(rfmodel, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+rf_grid_probs_test  <- predict(rfmodel, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_rf_grid_train <- roc(train_data_preprocessed$gallstone_status, rf_grid_probs_train)$auc
+auc_rf_grid_test  <- roc(test_data_preprocessed$gallstone_status, rf_grid_probs_test)$auc
+
+# === RANDOM FOREST (Random Search) ===
+rf_random_probs_train <- predict(rfmodel2, newdata = train_data_preprocessed, type = "prob")[, "Gallstone"]
+rf_random_probs_test  <- predict(rfmodel2, newdata = test_data_preprocessed, type = "prob")[, "Gallstone"]
+
+auc_rf_random_train <- roc(train_data_preprocessed$gallstone_status, rf_random_probs_train)$auc
+auc_rf_random_test  <- roc(test_data_preprocessed$gallstone_status, rf_random_probs_test)$auc
+
+```
+
+## Results {.scrollable}
+
+```{r}
+# Compare test performance
+# Extract Accuracy for each model
+test_results <- data.frame(
+  Model = c(
+    "Logistic",
+    "Penalized Logistic",
+    "Decision Tree",
+    "Pruned Tree",
+    "Bagging",
+    "Random Forest (Grid)",
+    "Random Forest (Random)"
+  ),
+  Accuracy = c(
+    conf_matrix_log_test$overall["Accuracy"],
+    conf_matrix_pen_test$overall["Accuracy"],
+    conf_matrix_test$overall["Accuracy"],
+    confus_tree_test$overall["Accuracy"],
+    conf_matrix_bag_test$overall["Accuracy"],
+    conf_matrix_rf_test$overall["Accuracy"],
+    conf_matrix_rf_random_test$overall["Accuracy"]
+  ),
+  Sensitivity = c(
+    conf_matrix_log_test$byClass["Sensitivity"],
+    conf_matrix_pen_test$byClass["Sensitivity"],
+    conf_matrix_test$byClass["Sensitivity"],
+    confus_tree_test$byClass["Sensitivity"],
+    conf_matrix_bag_test$byClass["Sensitivity"],
+    conf_matrix_rf_test$byClass["Sensitivity"],
+    conf_matrix_rf_random_test$byClass["Sensitivity"]
+  ),
+  Specificity = c(
+    conf_matrix_log_test$byClass["Specificity"],
+    conf_matrix_pen_test$byClass["Specificity"],
+    conf_matrix_test$byClass["Specificity"],
+    confus_tree_test$byClass["Specificity"],
+    conf_matrix_bag_test$byClass["Specificity"],
+    conf_matrix_rf_test$byClass["Specificity"],
+    conf_matrix_rf_random_test$byClass["Specificity"]
+  ),
+  Precision = c(
+    conf_matrix_log_test$byClass["Precision"],
+    conf_matrix_pen_test$byClass["Precision"],
+    conf_matrix_test$byClass["Precision"],
+    confus_tree_test$byClass["Precision"],
+    conf_matrix_bag_test$byClass["Precision"],
+    conf_matrix_rf_test$byClass["Precision"],
+    conf_matrix_rf_random_test$byClass["Precision"]
+)
+  
+  )
+
+test_results$AUC <- c(
+  auc_logistic_test,
+  auc_penalized_test,
+  auc_tree_test,
+  auc_pruned_test,
+  auc_bagging_test,
+  auc_rf_grid_test,
+  auc_rf_random_test
+)
+my_colors <- c(
+  "Logistic" = "#1b9e77",
+  "Penalized Logistic" = "#d95f02",
+  "Decision Tree" = "#7570b3",
+  "Pruned Tree" = "#e7298a",
+  "Bagging" = "#66a61e",
+  "Random Forest (Defined mtry)" = "#e6ab02",
+  "Random Forest (Random)" = "#a6761d"
+)
+
+library(plotly)
+test_results_longer<- test_results |>
+  pivot_longer(cols=-Model,
+               names_to = "Metric",
+               values_to = "Value")
+
+p<-ggplot(test_results_longer, aes(x = Metric, y = Value, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Comparison of Model Performance Metrics on Test Data",
+    y = "Metric Value",
+    x = "Metric"
+  ) +
+  theme_bw() +   scale_fill_manual(values = my_colors) 
+ggplotly(p)
+```
+
+-   The test dataset comprised 95 observations.
+
+-   The preprocessing techniques employed for the training dataset were equally applied to the test dataset, ensuring consistency in data handling and preparation.
+
+**Performance Metrics Evaluation**
+
+-   **Accuracy**: The penalized logistic regression model demonstrated the highest accuracy, correctly classifying 87.4% of the patients.
+
+-   **Precision**: The penalized logistic regression model achieved the highest precision of 87.0%. This indicates that 87.0% of patients classified by the model as having gallstones actually had gallstones.
+
+-   **Sensitivity**:
+
+    -   The logistic regression model demonstrated the highest sensitivity of 92.2%, meaning it correctly identified 92.2% of patients who actually had gallstones.
+
+    -   The penalized logistic regression model ranked second in terms of sensitivity at 90.2%, correctly identifying 90.2% of patients who actually had gallstones.
+
+-   **Specificity**: The penalized logistic regression model achieved the highest specificity of 84.1%, correctly identifying 84.1% of healthy patients (true negatives).
+
+-   **Area Under the Curve (AUC)**: The penalized logistic regression model demonstrated the highest AUC value of 0.95, indicating excellent discrimination capability between individuals with and without gallstones.
+
+## Discussion {.scrollable}
+
+-   Gallstone disease is a common but frequently underdiagnosed condition, often presenting with no overt signs or symptoms. Consequently, detection usually occurs only when a gallstone lodges in the duct and causes a blockage.
+
+-   Nevertheless, there are several tests available to evaluate symptoms linked to this condition, along with various risk factors that increase an individual's likelihood of developing it.
+
+-   The objective of this project was to construct a machine learning model capable of accurately predicting whether a person has gallstone disease or is healthy, based on a set of features.
+
+-   We trained several classification methods and conducted an implicit comparison between parametric and non-parametric approaches.
+
+-   Performance metrics revealed that parametric models, such as logistic regression and elastic net regression, emerged as the best or most **generalizable** classifiers, achieving the highest scores.
+
+-   This distinction can be attributed to factors such as the sample size of the observations, as non-parametric methods require a larger number of observations to provide an accurate estimate of the classifier.
+
+-   According to the variable importance plot based on the penalized model, we identified weight as the most significant feature in predicting gallstone disease, followed by factors related to bioimpedance and laboratory results.
+
+## 
+
+```{r}
+vip(penalized_mod$finalModel, geom="point") + theme_bw()
+```
+
+## References
+
+Cleveland Clinic. “Gallstones: Treatment, Definition, Risk Factors & Symptoms.” *Cleveland Clinic*, 15 Jan. 2024, <https://my.clevelandclinic.org/health/diseases/7313-gallstones>.
+
+“Elastic Net Regression in R Programming.” *GeeksforGeeks*, 24 July 2020, <https://www.geeksforgeeks.org/elastic-net-regression-in-r-programming/>.
+
+Esen, I., Arslan, H., Aktürk, S., Gülşen, M., Kültekin, N., & Özdemir, O. (2024). *Gallstone \[Dataset\]*. UCI Machine Learning Repository. <https://doi.org/10.1097/md.0000000000037258>.
+
+finnstats. “Random Forest in R \| R-Bloggers.” *R-Bloggers*, 13 Apr. 2021, <https://www.r-bloggers.com/2021/04/random-forest-in-r/>.
+
+Greenwell, Bradley Boehmke & Brandon. *Hands-on Machine Learning with R*. 2020, <https://bradleyboehmke.github.io/HOML/>.
+
+İrfan Esen, et al. “Early Prediction of Gallstone Disease with a Machine Learning-Based Method from Bioimpedance and Laboratory Data.” *Medicine*, vol. 103, no. 8, Wolters Kluwer, Feb. 2024, pp. e37258–58. <https://doi.org/10.1097/md.0000000000037258>.
+
+James, Gareth, et al. *An Introduction to Statistical Learning: With Applications in R*. Springer, 2013.
+
+Kelly, John Michael. “RPubs - Ridge, Lasso, and Elastic Net Tutorial.” *Rpubs.com*, 24 Mar. 2022, <https://rpubs.com/jmkelly91/881590>.
+
+Mayo Clinic. “Gallstones - Diagnosis and Treatment - Mayo Clinic.” *Mayoclinic.org*, 20 Aug. 2021, <https://www.mayoclinic.org/diseases-conditions/gallstones/diagnosis-treatment/drc-20354220>.
