@@ -1,0 +1,1637 @@
+---
+title: "Assessing Demographic and Case-Level Predictors of Exoneration Duration Using LME and GEE Models"
+author: "Obehi Winnifred Ikpea"
+date: "2025-06-03"
+slug: wrongful-convictions-longitudinal-study
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    number-sections: true
+    code-fold: true
+    fig-width: 8
+    fig-height: 6
+    fig-align: "center"
+    bibliography: references.bib
+    csl: apa.csl
+    self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+lang: en
+---
+<style>
+.subtitle {
+  font-size: 0.85em !important;
+  font-weight: normal !important;
+  margin-top: 0.5em !important;
+  color: #666 !important;
+}
+.title {
+  margin-bottom: 0.2em !important;
+}
+body {
+  font-family: 'Source Sans Pro', Arial, sans-serif;
+  line-height: 1.6;
+}
+.navbar-brand {
+  font-weight: bold;
+}
+</style>
+
+
+
+```{r}
+#| label: load-packages and data preparation
+#| message: false
+#| echo: false
+#| warning: false
+# 📦 Core Data Manipulation & Visualization
+library(tidyverse)   # includes ggplot2, dplyr, tidyr, readr, etc.
+library(janitor)     # clean variable names
+library(labelled)    # for working with labelled data
+library(dplyr)
+library(rempsyc)
+# 📊 Visualization & Theming
+library(ggthemes)    # additional themes for ggplot2
+library(viridis)     # color scales
+library(ggh4x)       # ggplot extensions
+library(ggpubr)      # publication-ready plots
+library(GGally)      # ggpairs and more advanced plot types
+theme_set(theme_minimal() + theme(legend.position = "bottom")) # default plot theme
+
+# 📈 Statistical Modeling
+library(car)         # ANOVA, influence diagnostics
+library(Epi)         # confidence intervals for model predictions
+library(lme4)        # linear mixed-effects models
+library(lmerTest)    # p-values for lme4 models
+library(emmeans)     # estimated marginal means
+library(multcomp)    # multiple comparisons and CIs
+library(geepack)     # generalized estimating equations
+library(ggeffects)   # marginal effects plots
+library(nlme)
+library(texreg)
+library(parameters)
+library(nlme)       
+library(glmtoolbox)
+# 🧮 Summary Statistics
+library(rstatix)     # statistical tests and descriptive stats
+library(gtsummary)   # table summaries for regression and descriptive stats
+library(gt)          # display beautiful tables
+
+# 🧹 Data Cleaning & Handling
+library(readr)       # reading in data
+library(naniar)      # handling missing data
+library(lubridate)   # date handling
+library(usmap)       # map visualizations
+library(kableExtra)
+library(flexplot)
+library(flextable)
+library(parameters)
+publicspreadsheet <- read_csv("publicspreadsheet.csv") |> clean_names()
+
+project_data <- publicspreadsheet |>
+  mutate(
+    conviction_date = as_date(date_of_1st_conviction, format = "%m/%d/%Y"),
+    exoneration_date = as_date(date_of_exoneration, format = "%m/%d/%Y"),
+    int = interval(conviction_date, exoneration_date),
+    time_to_exoneration = round(time_length(int, "year"), 2)
+  )
+
+### 🔹 Classify Crime Types
+project_data <- project_data |>
+  mutate(
+    crime_type = case_when(
+      worst_crime_display %in% c("Murder", "Accessory to Murder", "Attempted Murder", "Manslaughter", 
+                                 "Assault", "Attempt, Violent", "Kidnapping", "Sexual Assault", 
+                                 "Child Sex Abuse", "Child Abuse", "Dependent Adult Abuse", 
+                                 "Other Violent Felony", "Other Violent Misdemeanor", 
+                                 "Menacing", "Threats", "Stalking", "Robbery") ~ "Person Crimes",
+      worst_crime_display %in% c("Theft", "Burglary/Unlawful Entry", "Arson", "Destruction of Property", 
+                                 "Possession of Stolen Property") ~ "Property Crimes",
+      worst_crime_display %in% c("Drug Possession or Sale", "Weapon Possession or Sale", 
+                                 "Immigration", "Supporting Terrorism", "Traffic Offense") ~ "Society Crimes",
+      worst_crime_display %in% c("Fraud", "Bribery", "Tax Evasion/Fraud", "Forgery", 
+                                 "Failure to Pay Child Support") ~ "White-collar Crimes",
+      worst_crime_display %in% c("Obstruction of Justice", "Official Misconduct", "Perjury", 
+                                 "Filing a False Report", "Sex Offender Registration", 
+                                 "Military Justice Offense") ~ "Justice System Crimes",
+      TRUE ~ "Other Crimes"
+    ),
+    crime_type = factor(
+      crime_type,
+      levels = c("Property Crimes", "Person Crimes", "White-collar Crimes", 
+                 "Society Crimes", "Justice System Crimes", "Other Crimes")
+    )
+  )
+
+# Set the reference level (optional: use the most frequent or baseline category)
+project_data$crime_type <- relevel(project_data$crime_type, ref = "Property Crimes")
+
+
+### 🔹 Recode State and Jurisdiction
+federal_map <- c(
+  "Fed-CA" = "California", "Fed-TX" = "Texas", "Fed-NY" = "New York",
+  "Fed-FL" = "Florida", "Fed-IL" = "Illinois", "Fed-MA" = "Massachusetts",
+  "Fed-WA" = "Washington", "Fed-MD" = "Maryland", "Fed-PA" = "Pennsylvania",
+  "Fed-VA" = "Virginia", "Fed-MI" = "Michigan", "Fed-NJ" = "New Jersey",
+  "Fed-CT" = "Connecticut", "Fed-OK" = "Oklahoma", "Fed-TN" = "Tennessee",
+  "Fed-OH" = "Ohio", "Fed-DE" = "Delaware", "Fed-MN" = "Minnesota",
+  "Fed-AZ" = "Arizona", "Fed-MT" = "Montana", "Fed-NV" = "Nevada",
+  "Fed-AL" = "Alabama", "Fed-NM" = "New Mexico", "Fed-KY" = "Kentucky",
+  "Fed-LA" = "Louisiana", "Fed-ND" = "North Dakota", "Fed-SD" = "South Dakota",
+  "Fed-DC" = "District of Columbia", "District of Columbia" = "District of Columbia",
+  "Fed-Military" = NA, "Puerto Rico" = NA, "Guam" = NA
+)
+
+valid_states <- state.name
+
+longitudinal_data_clean <- project_data |>
+  mutate(
+    corrected_state = case_when(
+      state %in% valid_states ~ state,
+      state %in% names(federal_map) ~ federal_map[state],
+      TRUE ~ NA_character_
+    ),
+    jurisdiction = case_when(
+      state %in% names(federal_map) ~ "Federal",
+      state %in% valid_states ~ "State",
+      TRUE ~ NA_character_
+    ),
+    state_abbr = state.abb[match(corrected_state, state.name)],
+    cluster_id = paste0(jurisdiction, "_", state_abbr)
+  ) 
+
+### 🔹 Race Recoding
+longitudinal_data_clean$race <- dplyr::recode(longitudinal_data_clean$race,
+  "Asian" = "Asian",
+  "Black" = "Black",
+  "Hispanic" = "Hispanic",
+  "White" = "White",
+  "Native American" = "Native American",
+  "Don't Know" = "Other",
+  "Other" = "Other"
+)
+
+# Optional: Convert to factor with order and reference level
+longitudinal_data_clean$race <- factor(
+  longitudinal_data_clean$race,
+  levels = c("White", "Black", "Hispanic", "Asian", "Native American", "Other")
+)
+
+
+
+
+### 🔹 Age Groups
+longitudinal_data_clean$age_group <- case_when(
+  longitudinal_data_clean$age <= 14 ~ "Childhood (0–14)",
+  longitudinal_data_clean$age >= 15 & longitudinal_data_clean$age <= 19 ~ "Adolescence (15–19)",
+  longitudinal_data_clean$age >= 20 & longitudinal_data_clean$age <= 29 ~ "Early Adulthood (20–29)",
+  longitudinal_data_clean$age >= 30 & longitudinal_data_clean$age <= 39 ~ "Mid Adulthood (30–39)",
+  TRUE ~ "Older Adulthood (40+)"
+)
+
+# Convert to ordered factor for modeling and plotting
+longitudinal_data_clean$age_group <- factor(
+  longitudinal_data_clean$age_group,
+  levels = c(
+    "Childhood (0–14)",
+    "Adolescence (15–19)",
+    "Early Adulthood (20–29)",
+    "Mid Adulthood (30–39)",
+    "Older Adulthood (40+)"
+  )
+)
+
+longitudinal_data_clean$exoneration_year<-year(project_data$exoneration_date)
+
+longitudinal_data_clean$conviction_year<-year(project_data$conviction_date)
+longitudinal_data_clean<-longitudinal_data_clean|>mutate_if(is.character, as.factor)
+longitudinal_data_clean$sex<-relevel(longitudinal_data_clean$sex, ref="Male")
+longitudinal_data_clean$race <- relevel(longitudinal_data_clean$race, ref = "Black")
+longitudinal_data_clean$jurisdiction <- relevel(longitudinal_data_clean$jurisdiction, ref = "State")
+longitudinal_data_clean$age_group <- relevel(longitudinal_data_clean$age_group, ref = "Early Adulthood (20–29)")
+longitudinal_data_clean$crime_type <- relevel(longitudinal_data_clean$crime_type, ref = "Person Crimes")
+
+longitudinal_data_clean<-longitudinal_data_clean|>select(age, age_group, sex, race, jurisdiction,crime_type, corrected_state,  conviction_year, exoneration_year, time_to_exoneration,worst_crime_display)|>drop_na()
+
+longitudinal_data_clean<-longitudinal_data_clean|>
+  mutate(years_since_1989 = exoneration_year - 1989)
+
+longitudinal_data_clean<-longitudinal_data_clean|>arrange(years_since_1989, corrected_state)
+```
+
+## Introduction
+
+In all criminal prosecutions, the accused shall enjoy the right to a speedy and public trial by an impartial jury of the state and district wherein the crime shall have been committed, which district shall have been previously ascertained by law, and to be informed of the nature and cause of the accusation; to be confronted with the witnesses against him; to have compulsory process for obtaining witnesses in his favor, and to have the Assistance of Counsel for his defense [@constitution_annotated]. The Sixth Amendment provides critical protections for those accused of crimes. Yet, despite these safeguards, wrongful convictions persist, and the journey from false imprisonment to exoneration differs significantly, contradicting the amendment's promise of prompt justice.
+
+Former U.S. Senator Ted Stevens is a notable case of wrongful conviction. He was prosecuted and found guilty of alleged criminal ethics violations. His conviction was ultimately overturned when a whistleblower revealed that prosecutors had withheld crucial evidence that could have proved his innocence, thereby violating his constitutional rights. Although the time between his conviction and exoneration was less than a year, the damage was already done, costing him his bid for reelection and leaving a lasting negative stigma associated with the allegations [@nacdl_2022].
+
+Similarly, LaCresha Murray's story highlights the tragic consequences of wrongful convictions. Convicted in 1996 at just 11 years old, she became the youngest person ever to be convicted of murder in Travis County. She was sentenced to 20 years in a youth prison; however, her conviction was overturned in 1999 after a judge found that her confession had been obtained unlawfully by the police [@aldis_2023].
+
+Archie Williams' case underscored significant injustices within the criminal justice system. Wrongfully convicted of rape at the age of 22 due to misidentification, he endured 37 years of incarceration. His long battle for justice, supported by the Innocence Project, culminated in a pivotal moment when a fingerprint found at the crime scene was linked to a serial rapist. This crucial evidence exonerated him, ultimately clearing him of all charges [@lahera_2023].
+
+The stories of exonerated individuals reveal a significant issue within the American legal system. Since 1989, over 3,000 people have been exonerated in the United States, having collectively spent more than 26,700 years in prison for crimes they did not commit. The reasons for these wrongful convictions are varied and include false confessions, misidentification by eyewitnesses, coerced testimony from informants, misapplication of scientific evidence, government misconduct, and inadequate legal representation.
+
+Significant disparities also exist in the manner in which these wrongful convictions occur. For example,  According to the National Registry of Exonerations, more than half of the 3,300 individuals exonerated between 1989 and 2022 are Black, despite Black people making up just 13.6% of the U.S. population. A 2022 report from the registry found that innocent Black individuals were seven times more likely to be wrongfully convicted of murder than innocent white individuals. This racial disproportionality in wrongful conviction cases highlights persistent biases within the criminal legal system [@innocence_project_2023].
+
+There is a limited understanding of how the timeline from conviction to exoneration varies among wrongfully convicted individuals in the U.S. since 1989, despite over 3,000 exonerations. This research project aims to investigate the impact of demographic factors (age, sex, and race) and crime characteristics (crime type and whether the case is state or federal) on exoneration timelines. We will also analyze trends at both the population and state levels, considering the clustered nature of cases and the longitudinal structure of the data. Understanding these patterns is essential for identifying systemic justice barriers and informing reforms to expedite the pursuit of justice. 
+
+## Methods
+
+### Data and Methods
+
+#### Data Source
+
+Data for this study were obtained from the National Registry of Exonerations, a comprehensive repository that documents the exoneration of innocent criminal defendants and works to prevent future wrongful convictions. The original dataset contained information on 3,497 individuals, including demographic characteristics (name, age, and sex), geographic information, case details (crime type and sentence), and temporal data (conviction and exoneration dates) [@nre_2022].
+
+#### Data Preparation and Variable Construction
+
+The data preparation process involved several systematic steps to ensure analytical suitability:
+
+##### Variable Selection
+Key variables were selected for analysis, including age, sex, race, crime type, state, date of conviction, and date of exoneration.
+
+##### Crime Type Recategorization
+Original crime classifications were consolidated into six broader categories based on their legal nature and societal impact:
+
+- **Crimes Against Persons**: Offenses causing harm or threat to individuals, including murder, assault, sexual offenses, and kidnapping
+- **Property Crimes**: Offenses involving theft or property damage, such as burglary, arson, and possession of stolen goods
+- **Crimes Against Society**: Offenses threatening societal order, including drug violations, weapons offenses, and immigration infractions
+- **White-Collar Crimes**: Financial and non-violent offenses, encompassing fraud, bribery, tax evasion, and forgery
+- **Justice System Crimes**: Offenses obstructing legal processes, such as perjury and official misconduct
+- **Other Crimes**: Miscellaneous offenses not fitting the aforementioned categories
+
+##### Jurisdiction Classification
+Cases were classified into two jurisdictional categories: state and federal to facilitate analysis of legal framework differences and their potential impact on case outcomes and procedural variations.
+
+##### Time-to-Exoneration Variable
+A continuous variable measuring the duration (in years) from initial conviction to exoneration was calculated for each case.
+
+##### Age Categorization
+
+Preliminary exploratory analysis revealed a positively skewed age distribution, with the majority of individuals aged 20 years or older at the time of conviction. Consequently, age was categorized into discrete groups spanning from adolescence to older adulthood to better capture developmental and life-stage effects on exoneration duration.
+
+**Final Dataset**
+
+After data cleaning and variable construction, the analytical dataset comprised 3,450 cases in 11 variables. The reduction from 3,497 to 3,450 cases (1.3% attrition) resulted from the exclusion of records with missing or incomplete data essential for the primary analyses.
+
+### Exploratory Data Analysis
+
+
+Exploratory data analysis is essential in any data-driven or statistical investigation, as it provides a comprehensive understanding of the distribution of each variable within a dataset. This process reveals patterns and trends, highlights associations, and uncovers unusual observations or anomalies.
+
+Using the finalized dataset, we examined the information in both cross-sectional and longitudinal formats.
+
+##### Cross-Sectional Exploratory Analysis
+
+The cross-sectional exploratory analysis included several types of visualizations to examine the distribution and relationships among key variables:
+
+**Univariate**
+
+- Histograms illustrating the age distribution of exonerees and the time taken for exoneration:
+
+- Bar plots depicting the distribution of race, sex, age group, jurisdiction, and crime type among exonerees.
+
+- Line graphs showing trends in the number of convictions and exonerations over the specified years.
+
+- A summary table providing numerical summaries of the various characteristics.
+
+**Bivariate**
+
+- Stratified line graphs illustrating the time to exoneration across various demographic and crime characteristics.
+
+- Stratified bar charts displaying the distribution of crime types by age group, race, and sex.
+
+- Stratified violin plots representing the distribution of years until exoneration, segmented by age group, sex, race, and crime type.
+
+- Two heatmaps illustrating the number of exonerations in each state, as well as the average time to exoneration for those states.
+
+These visualizations and tables reveal patterns associated with age, race, sex, crime type, and jurisdiction, offering valuable insights into the groups most affected by wrongful convictions.
+
+##### Longitudinal Exploratory Analysis
+
+To examine the longitudinal structure of the data, we developed several specialized visualizations:
+
+- **Mean trajectory plots** were constructed to visualize the average time to exoneration following an initial conviction since 1989. An overall mean trajectory plot, along with stratified plots, was created to examine the influence of various case and demographic characteristics on this pattern.
+
+- **Spaghetti plots** were employed to visually compare the trends in time to exoneration across different states in the United States since 1989. Furthermore, stratified plots were developed to explore how unique case-specific and demographic factors impact these trajectories.
+
+- **State-specific trajectory plots** were generated faceted by state for all 50 states and the District of Columbia. These plots highlight the within-state variability in the duration from initial conviction to exoneration, providing an in-depth analysis of the temporal aspects of the exoneration process across various jurisdictions.
+
+These visualizations uncovered significant patterns in exoneration timelines, effectively addressing the clustered nature of the data and enriching our understanding of wrongful conviction trends within the United States justice system.
+
+### Statistical Analyses
+
+To address the research objectives, we employed two approaches suitable for analyzing longitudinal and clustered data: the Linear Mixed Effects Model (LME) and the Generalized Estimating Equations (GEE) framework. These methods allowed us to assess both subject-specific and population-averaged effects, respectively [@fitzmaurice_laird_ware_2011; @vanegas_rondon_paula_2023].
+
+##### Linear Mixed Effects Model
+
+The linear mixed effects model (LME) assumes that exoneration timelines depend on a combination of fixed effects (population-level parameters shared by all states) and state-specific random effects. This leads to a model for the marginal mean response averaged over the distribution of the random effects. The introduction of random effects induces covariance among exoneration cases within the same state [@fitzmaurice_laird_ware_2011].
+Three common formulations of the linear mixed effects models were considered:
+
+-   **Random Intercept Only**: In this model, each state is assumed to have a unique underlying baseline level of response that persists over time. It estimates a unique intercept for each state in addition to overall population-level parameters.
+
+$$
+\begin{aligned}
+Y_{ij} &= (\beta_0 + U_{0i}) + \beta_1\,X_{ij} + \beta_2\,T_{ij} + \beta_3\,(X_{ij}\times T_{ij}) + \varepsilon_{ij}
+\end{aligned}
+$$ 
+
+This model describes the mean response trajectory over time for any state. $U_{0i}$ is the state-specific random intercept that describes how the baseline level for the $i^{th}$ state deviates from the population average ($\beta_0$), after the effects of the covariates have been accounted for. 
+
+-   **Random Intercept + Random Slope on (T) (Uncorrelated)**: This model estimates both a common intercept and slope, as well as state-specific intercepts and slopes, but assumes that the random intercept and slope are uncorrelated:
+
+$$
+  \begin{aligned}
+Y_{ij}
+&= (\beta_0 + U_{0i})
++ \beta_1\,X_{ij}
++ (\beta_2 + U_{1i})\,T_{ij}
++ \beta_3\,(X_{ij}\times T_{ij})
++ \varepsilon_{ij}\\
+\end{aligned}
+$$
+
+-   **Random Intercept + Random Slope on (T) (Correlated)**: This formulation is the same as Model 2 but allows the random intercept and slope to be correlated:
+
+$$
+  \begin{aligned}
+Y_{ij}
+&= (\beta_0 + U_{0i})
++ \beta_1\,X_{ij}
++ (\beta_2 + U_{1i})\,T_{ij}
++ \beta_3\,(X_{ij}\times T_{ij})
++ \varepsilon_{ij},\\
+\end{aligned}
+$$
+
+All three models were fitted to address each research objective and subsequently compared using the Akaike Information Criterion (AIC), Bayesian Information Criterion (BIC), and the likelihood ratio test. The Random Intercept + Random Slope (Uncorrelated) model consistently exhibited the best fit, reflected by the lowest AIC and BIC values, and was thus selected as the final model. To evaluate the significance of the main effects and interactions, Type III Wald chi-square tests were conducted using the **car::Anova()** function.
+
+##### Generalized Estimating Equations
+
+The Generalized Estimating Equations (GEE) method is a statistical technique for analyzing clustered or correlated data. Unlike mixed effects models, GEE focuses on estimating population-averaged effects rather than subject-specific impacts for individual clusters [@vanegas_rondon_paula_2023]. 
+
+In our analysis, we initially employed an exchangeable working correlation structure, which assumes that all pairs of observations within each state have equal correlation, regardless of their temporal separation. We also explored alternative working correlation structures, including independence and autoregressive structures. Using model selection criteria. Specifically the Quasi-likelihood under Independence Criterion (QIC) and Correlation Information Criterion (CIC), we identified the structure with the lowest fit statistic. In this case, the exchangeable correlation structure provided the best fit to our data. 
+
+##### Model Specification
+
+Each model included the following general marginal structure:
+
+$$E[Y_{ij}|X_{ij}, T_{j}] = \beta_0 + \beta_1T_{j} + \beta_2X_{ij} + \beta_3T_{j}X_{ij}$$ 
+
+Where:
+
+-   $Y_{ij}$:  Time to exoneration for state $i$ in year $j$
+-   $T_{j}$: Years since 1989 (baseline year)
+-   $X_{ij}$: Covariate of interest for state $i$ in year $j$ (e.g., proportion of cases by sex, race, crime type, age group, or jurisdiction type)
+-   $i$: Index for **state** (cluster), $i = 1, 2, ..., 51$ (50 states + DC)
+-   $j$: Index for **year** within each state cluster, $j = 1989, 1990, ..., 2024$
+
+ Separate models were fit for each covariate. Wald tests were used to assess:
+
+-   $\beta_1$: The main effect of time (overall temporal trends in time to exoneration)
+-   $\beta_2$: The main effect of the covariate (differences in time to exoneration by covariate level)  
+-   $\beta_3$: The interaction between time and the covariate (whether temporal trends differ by covariate level)
+
+## Results
+
+This section presents findings from exploratory data analysis and statistical assessments, showcasing them through various forms such as graphical representations, tables, and statistical models.
+
+### Exploratory Data Analysis:
+
+#### Cross-sectional Structure
+
+The quarto dashboard provided a comprehensive cross-sectional overview of the variables in the exoneration dataset. The visualizations were organized into three categories: Univariate distributions, Bivariate distributions and associations, and Trend visualizations. This structure allowed for effective analysis of the data. Notable observations include:
+
+- The average time from initial conviction to exoneration was 12.3 years with the histogram being positively skewed.
+- The average age of the convicted then exonerated individuals was 28.3 years with a positively skewed distribution.
+- Males comprised the majority of exoneration cases (over 90%), with particularly high representation in person crimes (93%) and justice system crimes (94%).
+- The 20-29 year old age group comprised the majority of exoneration cases (over 40%), with early adulthood (20-29) representing 45% of person crimes exonerations, and 46% of society crimes.
+- Black individuals were disproportionately represented in exoneration cases, accounting for 53% of the total, with particularly high representation in society crimes (69%) and person crimes (52%).
+- State cases comprised the majority of exonerations compared to federal cases, with nearly all person crimes exonerations (99%) occurring at the state level.
+- Crimes against persons accounted for over 72% of exoneration cases, with 2,508 cases representing the largest category by far.
+- Time to exoneration varied significantly by crime type, with person crimes taking the longest (14.34 years on average) and justice system crimes the shortest (4.10 years).
+- White-collar crimes showed the highest proportion of white defendants (75%) and federal jurisdiction cases (69%).
+[@ikpea_2024]
+
+#### Longitudinal Structure
+
+1.  **Plot of Means:**
+
+::: {layout-ncol="2"}
+::: column
+```{r echo=FALSE, warning=FALSE}
+#| label: fig-time-mean-conviction-to-exoneration
+#| fig-cap: Mean time from conviction to exoneration per year.
+#| 
+summary_year <- longitudinal_data_clean |>
+  group_by(years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+# Identify lowest and highest mean_duration
+highlight_points <- summary_year |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2)))
+
+# Plot
+ggplot(summary_year, aes(x = years_since_1989, y = mean_duration)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(size = 2, color = "black", alpha = 0.3) +
+  geom_label(
+    data = highlight_points,
+    aes(label = label),
+    nudge_y = 0.5,
+    color = "white",
+    fill = "#d62728",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3
+  ) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration Over Time",
+    x = "Years Since 1989",
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12)
+  )
+
+```
+:::
+
+```{r echo=FALSE}
+#| label: fig-time-by-sex
+#| fig-cap: "Mean time from conviction to exoneration by sex over years since 1989."
+summary_sex <- longitudinal_data_clean |>
+  group_by(sex, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+# Identify lowest and highest mean_duration
+highlight_sex <- summary_sex |>
+  group_by(sex) |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(
+    label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2))
+  )
+
+ggplot(summary_sex, aes(x = years_since_1989, y = mean_duration, group = sex, color = sex)) +
+  geom_line(linewidth = 1) + 
+  geom_point(aes(shape = sex), size = 2) +
+  geom_label(
+    data = highlight_sex,
+    aes(label = label, fill = sex),  # <-- Changed from type to sex
+    nudge_y = 0.5,
+    color = "white",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3,
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Sex Over Time",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)",
+    color = "Sex"
+  ) + 
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    legend.position = "bottom"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2")  # <-- Match fill colors to the same palette
+
+```
+
+```{r}
+#| label: fig-time-by-crime
+#| fig-cap: "Mean time from conviction to exoneration by crime type over years since 1989."
+summary_crime_type <- longitudinal_data_clean |>
+  group_by(crime_type, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+highlight_crime <- summary_crime_type |>
+  group_by(crime_type) |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(
+    label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2))
+  )
+
+ggplot(summary_crime_type, aes(x = years_since_1989, y = mean_duration, group = crime_type, color = crime_type)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = crime_type), size = 2) +
+  geom_label(
+    data = highlight_crime,
+    aes(label = label, fill = crime_type),  # <-- Changed from type to sex
+    nudge_y = 0.5,
+    color = "white",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3,
+    show.legend = FALSE
+  )+
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Crime Type",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Paired")
+```
+
+```{r}
+#| label: fig-time-by-race
+#| fig-cap: "Mean time from conviction to exoneration by race over years since 1989."
+summary_race <- longitudinal_data_clean |>
+  group_by(race, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+highlight_race <- summary_race |>
+  group_by(race) |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(
+    label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2))
+  ) 
+ggplot(summary_race, aes(x = years_since_1989, y = mean_duration, group = race, color = race)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = race), size = 2) +
+  geom_label(
+    data = highlight_race,
+    aes(label = label, fill = race),  # <-- Changed from type to sex
+    nudge_y = 0.5,
+    color = "white",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3,
+    show.legend = FALSE
+  )+  labs(
+    title = "Mean Time from Conviction to Exoneration by Race",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Dark2")
+```
+
+```{r}
+#| label: fig-time-by-agegroup
+#| fig-cap: "Mean time from conviction to exoneration by age group over years since 1989."
+summary_age <- longitudinal_data_clean |>
+  group_by(age_group, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+highlight_age <- summary_age |>
+  group_by(age_group) |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(
+    label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2))
+  ) 
+
+ggplot(summary_age, aes(x = years_since_1989, y = mean_duration, group = age_group, color = age_group)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = age_group), size = 2) +
+ geom_label(
+    data = highlight_age,
+    aes(label = label, fill = age_group),  # <-- Changed from type to sex
+    nudge_y = 0.5,
+    color = "white",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3,
+    show.legend = FALSE
+  )+ 
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Age Group",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) + theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1")
+```
+
+```{r}
+#| label: fig-time-by-Jurisdiction
+#| fig-cap: "Mean time from conviction to exoneration by Jurisdiction over years since 1989."
+summary_jurisdiction <- longitudinal_data_clean |>
+  group_by(jurisdiction, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+highlight_jurisdiction <- summary_jurisdiction |>
+  group_by(jurisdiction) |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(
+    label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2))
+  ) 
+
+ggplot(summary_jurisdiction, aes(x = years_since_1989, y = mean_duration, group = jurisdiction, color = jurisdiction)) +
+  geom_line(linewidth = 1) + 
+  geom_point(aes(shape = jurisdiction), size = 2) +
+  geom_label(
+    data = highlight_jurisdiction,
+    aes(label = label, fill = jurisdiction),  # <-- Changed from type to sex
+    nudge_y = 0.5,
+    color = "white",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3,
+    show.legend = FALSE
+  )+
+  
+   labs(
+    title = "Mean Time from Conviction to Exoneration by Jurisdiction",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) + 
+  theme_minimal(base_size = 10) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Set2")
+```
+::::
+
+**Discussion**
+
+In the United States, there has been a significant increase in the average duration from conviction to exoneration over the years. Since 1989, the average time has fluctuated, with the shortest average recorded at 4.66 years just three years after the baseline, while the longest reached an average of 20.41 years, occurring 35 years later.
+
+When breaking down the data by sex, it was revealed that patterns varied. At the beginning, there was no average time to exoneration documented for females, which limited comparisons in the early years. However, over time, males had a lower average of 4.66 years three years post-baseline, while females showed a lower average of 2.21 years, observed 18 years after the baseline. The peak average for males was 21.24 years at the 35-year mark, while the peak for females was 14.82 years, recorded 33 years post-baseline.
+
+Examining the data by jurisdiction, it was noted that federal cases often reported shorter average times compared to state cases, especially in the early years. Federal cases had a minimum average of just 0.76 years one year post-baseline, while state cases reached a minimum of 4.8 years three years after the baseline. However, federal cases also recorded a maximum average of 25.21 years at 31 years post-baseline, while state cases peaked at 21.31 years after 35 years. Overall, state cases generally exhibited higher average times throughout most of the study, although there were instances where federal cases surpassed them.
+
+2.  **Spaghetti Plots:**
+
+::: {layout-ncol="2"}
+::: column
+
+```{r}
+#| label: fig-time-overall
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration (All States)"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+  geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by State",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    legend.position = "none"  # Hide overly busy legend
+  ) +
+  scale_color_viridis_d(option = "C", begin = 0.2, end = 0.8)
+
+```
+
+:::
+
+```{r}
+#| label: fig-time-by-sex_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Sex"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+  facet_wrap(.~sex) +
+  geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Sex",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "B", begin = 0.2, end = 0.8)
+```
+
+
+
+```{r}
+#| label: fig-time-by-race_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Race"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, color=corrected_state)) +
+  facet_wrap(.~race) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Race",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "C")
+```
+
+```{r}
+#| label: fig-time-by-agegroup_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Age Group"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+ facet_wrap(.~age_group) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Age Group",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "D")
+```
+
+```{r}
+#| label: fig-time-by-crime_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Crime Type"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+ facet_wrap(.~crime_type) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Crime Type",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "E")
+```
+
+```{r}
+#| label: fig-time-by-Jurisdiction_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Jurisdiction"
+ggplot(longitudinal_data_clean,  
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) + 
+ facet_wrap(.~jurisdiction) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Jurisdiction",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "F")
+```
+:::
+
+**Discussion**
+
+The spaghetti plot illustrates temporal trends in the duration from initial conviction to exoneration across various states in the United States. Each line, differentiated by color, represents a distinct state, thereby enabling assessments of state-level variations over time. In 1989, we identified notable disparities in the time from initial conviction to exoneration among states, indicating a progression in these differences.
+
+
+3.  **State-Specific Plots:**
+
+```{r}
+#| label: fig-time-by-state
+#| fig-cap: Time from Conviction to Exoneration by State
+#| fig-height: 10
+#| fig-width: 10
+ggplot(data = longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state)) +
+  facet_wrap(. ~ corrected_state, ncol = 6) + 
+  geom_line(alpha = 0.6, linewidth = 0.8, color = "#2D708EFF") +
+  geom_point(alpha = 0.6, color = "#2D708EFF", size = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by State",
+    x = "Years Since 1989", 
+    y = "Time to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    strip.text = element_text(size = 8),
+    panel.spacing = unit(0.7, "lines")
+  )
+
+
+```
+
+**Discussion**
+
+The state-specific analysis revealed significant variability both between and within states regarding the time required for exoneration over the 35 years since 1989. States such as Illinois, Texas, New York, and California displayed consistent patterns of exonerations, accompanied by considerable variations in duration; many cases took over 20 years to resolve. Conversely, other states reported sparse data, with fewer exonerations and more variable patterns of exoneration. While certain states yielded sufficient observations to facilitate a clearer understanding of temporal trends, others contributed as few as three observations throughout the entire study period, which hindered our ability to examine within-state variation thoroughly. Overall, these findings highlighted the persistent and unequal impact of wrongful convictions in the United States.
+
+
+### Statistical Analyses
+
+This section highlights the results of the linear mixed effects model. For comparison, the generalized estimating equation results are provided in the Appendix.
+
+```{r model-setup, include=FALSE}
+## Generalized Estimating Equations 
+## Specifying Working Correlation Structure Options
+
+# Available correlation structures:
+# 1. "Independence" - No correlation between repeated measures
+# 2. "Exchangeable" - Equal correlation between all pairs
+# 3. "AR-M-dependent(m)" - Auto-regressive correlation
+# 4. "Unstructured" - Each pairwise correlation estimated separately
+
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(nlme)
+library(geepack)
+library(sjPlot)
+
+# Function to fit and compare GEE models
+fit_compare_gee_models <- function(predictor) {
+  # Create formula
+  form <- as.formula(paste0("time_to_exoneration ~ years_since_1989 * ", predictor))
+
+  # Fit GEE models with different correlation structures
+  m_indep <- glmgee(form, data = longitudinal_data_clean, id = corrected_state, corstr = "Independence")
+  m_exch  <- update(m_indep, corstr = "Exchangeable")
+  m_ar1   <- update(m_indep, corstr = "AR-M-dependent(1)")
+  m_ar2   <- update(m_indep, corstr = "AR-M-dependent(2)")
+  m_ar3   <- update(m_indep, corstr = "AR-M-dependent(3)")
+
+  # Model criteria
+  CIC_vals  <- CIC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+  QIC_vals  <- QIC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+  GHYC_vals <- GHYC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+  RJC_vals  <- RJC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+  AGPC_vals <- AGPC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+  SGPC_vals <- SGPC(m_indep, m_exch, m_ar1, m_ar2, m_ar3, verbose = FALSE)
+
+  # Combine and label
+  comparison_df <- cbind(
+    CIC = CIC_vals,
+    QIC = QIC_vals[, "QIC"],
+    GHYC = GHYC_vals[, "GHYC"],
+    RJC = RJC_vals[, "RJC"],
+    AGPC = AGPC_vals[, "AGPC"],
+    SGPC = SGPC_vals[, "SGPC"]
+  )
+
+  rownames(comparison_df) <- c("Independence", "Exchangeable", "AR(1)", "AR(2)", "AR(3)")
+  return(comparison_df)
+}
+
+# Run model comparisons for each predictor
+compare_sex <- fit_compare_gee_models("sex")
+compare_race <- fit_compare_gee_models("race")
+compare_age_group <- fit_compare_gee_models("age_group")
+compare_crime_type <- fit_compare_gee_models("crime_type")
+compare_jurisdiction <- fit_compare_gee_models("jurisdiction")
+```
+
+#### Sex as Covariate of Interest
+
+```{r sex-models, include=FALSE}
+#| label: sex-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models
+mod_sex1 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_sex2 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_sex3 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+sex_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * sex, 
+                      data = longitudinal_data_clean, 
+                      id = corrected_state, 
+                      corstr = "Exchangeable")
+```
+
+```{r sex-lmm-table}
+#| label: tbl-lmm-sex
+#| tbl-cap: "Fixed Effects - Sex Linear Mixed Model"
+
+# Extract fixed effects summary
+fixed_effects_df <- as.data.frame(summary(mod_sex2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+# Get confidence intervals
+ci <- nlme::intervals(mod_sex2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("CI Lower", "CI Upper")
+
+# Combine results
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+
+
+kable(fixed_effects_full, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings:**
+
+
+- In 1989, the estimated average time from initial conviction to exoneration for males in the United States was 4.26 years. A significant main effect of time was observed, indicating that with each additional year since 1989, the estimated average time to exoneration for males increased by 0.36 years (95% CI: 0.30, 0.41; p < 0.001).
+
+- The main effect of sex was not statistically significant; females had an estimated average time to exoneration 0.20 years shorter than males in 1989, but this difference was not statistically significant (95% CI: -0.73, 0.32; p = 0.89). However, a significant interaction between sex and time indicated that the rate of change in the average exoneration time was 0.19 years slower per year for females compared to males (95% CI: -0.30, -0.07; p < 0.05).
+
+
+```{r sex-gee-table, include=FALSE}
+#| label: tbl-gee-sex
+#| tbl-cap: "GEE Model - Sex as Predictor"
+
+tab_model(sex_mod_glm, title = "GEE Model - Sex as Predictor")
+```
+
+#### Race as Covariate of Interest
+
+```{r race-models, include=FALSE}
+#| label: race-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models
+mod_race1 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_race2 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_race3 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+race_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * race, 
+                       data = longitudinal_data_clean, 
+                       id = corrected_state, 
+                       corstr = "Exchangeable")
+```
+
+```{r race-lmm-table}
+#| label: tbl-lmm-race
+#| tbl-cap: "Fixed Effects - Race Linear Mixed Model (Significant Results Only)"
+
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_race2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_race2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings (Significant Results Only):**
+
+- In 1989, the estimated average time from initial conviction to exoneration for Black exonerees in the United States was 5.27 years. A significant main effect of time showed that this duration increased by 0.35 years for each additional year since 1989 (95% CI: 0.29, 0.41; p < 0.001).
+
+- A significant main effect of race indicated that Hispanic exonerees had a substantially shorter estimated average time to exoneration in 1989, 5.86 years less than that of Black exonerees (95% CI: -8.37, -3.35; p < 0.001).
+
+- Additionally, significant interaction effects between race and time were observed. Specifically, the estimated annual rate of change in the average exoneration time for Hispanic exonerees was 0.18 years greater than that for Black exonerees (95% CI: 0.08, 0.28; p < 0.05), whereas for Asian exonerees, the annual rate of change was 0.55 years less than that for Black exonerees (95% CI: -1.02, -0.07; p < 0.05).
+
+
+
+```{r race-gee-table, include=FALSE}
+#| label: tbl-gee-race
+#| tbl-cap: "GEE Model - Race as Predictor"
+
+tab_model(race_mod_glm, title = "GEE Model - Race as Predictor")
+```
+
+
+#### Age Group as Covariate of Interest
+
+```{r age-models, include=FALSE}
+#| label: age-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models
+mod_age_group1 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_age_group2 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_age_group3 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+age_group_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * age_group, 
+                            data = longitudinal_data_clean, 
+                            id = corrected_state, 
+                            corstr = "Exchangeable")
+```
+
+
+```{r age-lmm-table}
+#| label: tbl-lmm-age
+#| tbl-cap: "Fixed Effects - Age Group Linear Mixed Model (Significant Results Only)"
+
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_age_group2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_age_group2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings (Significant Results Only):**
+
+- In 1989, the estimated average time from initial conviction to exoneration for the 0–14 age group in the United States was 4.98 years. A significant main effect of time indicated that this duration increased by 0.37 years for each additional year since 1989 (95% CI: 0.31, 0.43; p < 0.001).
+
+- However, the main effect of age group was not statistically significant, as there was insufficient evidence to conclude that the average time to exoneration in 1989 differed across age groups (ANOVA p = 0.33).
+
+- Significant interaction effects between age group and time were observed. Specifically: 
+
+  - The annual rate of change in average exoneration time for the 15–19 age group was 0.15 years greater than that for the 0–14 age group (95% CI: 0.06, 0.24; p < 0.05),
+  
+  - The 30–39 age group showed a slightly slower rate of change, at 0.09 years less per year (95% CI: -0.17, -0.00; p = 0.045).
+
+  - The 40+ age group experienced the slowest increase, with an annual rate of change 0.24 years less than that for the 0–14 age group (95% CI: -0.33, -0.14; p < 0.001).
+
+
+
+```{r age-gee-table, include=FALSE}
+#| label: tbl-gee-age
+#| tbl-cap: "GEE Model - Age Group as Predictor"
+
+tab_model(age_group_mod_glm, title = "GEE Model - Age Group as Predictor")
+```
+
+
+#### Crime Type as Covariate of Interest
+
+```{r crime-models, include=FALSE}
+#| label: crime-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models
+mod_crime_type1 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type2 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type3 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+crime_type_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * crime_type, 
+                             data = longitudinal_data_clean, 
+                             id = corrected_state, 
+                             corstr = "Exchangeable")
+```
+
+
+```{r crime-lmm-table}
+#| label: tbl-lmm-crime
+#| tbl-cap: "Fixed Effects - Crime Type Linear Mixed Model (Significant Results Only)"
+
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_crime_type2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_crime_type2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings:**
+
+- In 1989, the estimated average time from initial conviction to exoneration for crimes against people in the United States was 4.45 years. A significant main effect of time indicated that this duration increased by 0.40 years for each additional year since 1989 (95% CI: 0.35, 0.45; p < 0.001).
+
+- A significant main effect of crime type was observed. Specifically, in 1989, individuals convicted of society crimes had an estimated average exoneration time that was 6.04 years shorter than those convicted of crimes against people (95% CI: -8.51, -3.58; p < 0.001).
+
+- Additionally, significant interaction effects between crime type and time were identified. The annual rate of change in the average exoneration time for property crimes was 0.21 years less per year than for crimes against people (95% CI: -0.39, -0.03; p = 0.026), while white-collar crimes showed a rate 0.31 years less per year (95% CI: -0.54, -0.08; p = 0.007). Society crimes had an annual rate of change in the average exoneration time 0.17 years less per year than crimes against people (95% CI: -0.26, -0.07; p = 0.001), and justice system crimes showed the largest difference, with a rate 0.40 years less per year (95% CI: -0.78, -0.01; p = 0.047).
+
+
+
+
+
+```{r crime-gee-table, include=FALSE}
+#| label: tbl-gee-crime
+#| tbl-cap: "GEE Model - Crime Type as Predictor"
+
+tab_model(crime_type_mod_glm, title = "GEE Model - Crime Type as Predictor")
+```
+
+
+#### Jurisdiction Type as Covariate of Interest
+
+```{r jurisdiction-models}
+#| label: jurisdiction-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models
+mod_jurisdiction_type1 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_jurisdiction_type2 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_jurisdiction_type3 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 + years_since_1989| corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+jurisdiction_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * jurisdiction, 
+                               data = longitudinal_data_clean, 
+                               id = corrected_state, 
+                               corstr = "Exchangeable", family = )
+```
+
+
+```{r jurisdiction-lmm-table}
+#| label: tbl-lmm-jurisdiction
+#| tbl-cap: "Fixed Effects - Jurisdiction Linear Mixed Model (Significant Results Only)"
+
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_jurisdiction_type2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_jurisdiction_type2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings:**
+
+- In 1989, the estimated average time from initial conviction to exoneration for state-level cases in the United States was 4.43 years. A significant main effect of time indicated that this duration increased by 0.35 years for each additional year since 1989 (95% CI: 0.29, 0.41; p < 0.05).
+
+- The main effect of jurisdiction was not statistically significant; there was insufficient evidence to conclude that the average exoneration time in 1989 differed between state and federal cases (ANOVA p = 0.18). However, a significant interaction between jurisdiction and time revealed that the annual rate of change in the average time to exoneration for state-level cases was 0.22 years less per year compared to federal cases (95% CI: -0.40, -0.04; p < 0.05).
+
+
+```{r jurisdiction-gee-table, include=FALSE}
+#| label: tbl-gee-jurisdiction
+#| tbl-cap: "GEE Model - Jurisdiction as Predictor"
+
+tab_model(jurisdiction_mod_glm, title = "GEE Model - Jurisdiction as Predictor")
+```
+
+#### Crime Type with Demographic Controls
+
+```{r crime-extended-models, include=FALSE}
+#| label: crime-extended-model-fitting
+#| echo: false
+
+# Linear Mixed Effects Models with controls
+mod_crime_type_extended1 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type_extended2 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type_extended3 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 + years_since_1989| corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model with controls
+crime_type_extended_glm <- glmgee(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex, 
+                                  data = longitudinal_data_clean, 
+                                  id = corrected_state, 
+                                  corstr = "Exchangeable")
+```
+
+
+```{r crime-extended-lmm-table}
+#| label: tbl-lmm-crime-extended
+#| tbl-cap: "Fixed Effects Estimates for Crime Type with Demographic Controls (Significant Results Only)"
+
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_crime_type_extended2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_crime_type_extended2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+**Key Findings:**
+
+Significant interaction effects between crime type and time were observed. After adjusting for age at baseline, race, and sex, the estimated annual rate of change in the average time from initial conviction to exoneration for exonerees convicted of property crimes was 0.19 years less per year than for those convicted of crimes against people (95% CI: -0.368, -0.009; p = 0.040). Similarly, for white-collar crimes, the annual rate of change in the average time was 0.23 years less per year compared to crimes against people (95% CI: -0.453, -0.011; p = 0.040). Exonerees convicted of society crimes also experienced a slower increase in average exoneration time, with a rate 0.18 years less per year than that for crimes against people (95% CI: -0.274, -0.082; p < 0.001).
+
+
+
+```{r crime-extended-gee-table, include=FALSE}
+#| label: tbl-gee-crime-extended
+#| tbl-cap: "GEE Model Estimates for Crime Type with Demographic Controls"
+#| echo: false
+
+tab_model(crime_type_extended_glm, title = "GEE Model - Crime Type with Controls")
+#anova(crime_type_extended_glm)
+```
+
+
+
+## Discussion
+
+The United States often identifies itself as the "Land of the Free," yet since 1989, there have been over 3,000 exonerations in the country. Innocent individuals have been wrongfully convicted of crimes of varying severity. This alarming statistic reflects a significant loss of years, leading to profound emotional, physical, and social instability for many. By utilizing data from 3,450 exonerees documented in the National Registry of Exonerations, this project aimed to analyze how the duration between initial conviction and eventual exoneration has evolved in the United States, alongside the influence of various factors such as demographics, crime types, and case characteristics. The demographic factors considered included the age of the exonerees at the time of conviction, as well as their sex and race. Case characteristics examined consisted of the type of crime and the jurisdiction involved.
+By analyzing factors such as race, age, sex, crime type, and jurisdiction, we identified patterns that may influence the duration it takes wrongfully convicted individuals to achieve exoneration.
+
+The cross-sectional exploratory analysis of the data revealed significant differences in the characteristics of exonerees. Specifically, individuals spent an average of 12.3 years from conviction to exoneration, with a mean age of 28.3 years at the time of conviction. Males accounted for over 90% of exonerations, particularly in cases involving crimes against people (93%) and justice system crimes (94%). The age group of 20-29 years old represented over 40% of cases, while Black individuals constituted 53% of exonerees, especially in society crimes (69%) and crimes against people (52%). Most exonerations occurred at the state level, with crimes against people representing over 72% of the total cases (2,508 in total). The time required for exoneration varied by crime type, averaging 14.34 years for crimes against people and 4.10 years for justice system crimes. White-collar crimes had a higher proportion of white defendants (75%) and were predominantly federal cases (69%).
+
+Due to the longitudinal nature of the data, a more sophisticated analysis was required. We utilized various visualization techniques, including spaghetti plots and subject-specific charts, to explore the within- and between-state variability in the time to exoneration over the 35-year period since 1989. The data exhibited imbalanced and complex structures: some states provided numerous observations with clear temporal trends, while others offered as few as three observations throughout the entire study period. Furthermore, the overall mean plot of time to exoneration indicated an increasing trend over time, accompanied by fluctuations, while stratified plots based on demographic and case characteristics revealed distinct associations.
+
+### Key Findings
+
+The longitudinal modelling of exoneration cases from 1989 onwards revealed significant trends and disparities in the time from initial conviction to exoneration in the United States. Over the past three decades, exoneration times have increased substantially, with an average annual rise of approximately 0.35 to 0.40 years across most demographic groups. Notably, Hispanic exonerees experienced significantly shorter initial exoneration times compared to Black exonerees. Additionally, the rate of increase in exoneration times varied by sex (slower for females), age group (slower for older individuals), crime type (slower increases for property crimes, white-collar crimes, and justice system offenses compared to crimes against people), and jurisdiction (slower increases for state versus federal cases). These trends suggest that while overall exoneration times are lengthening, the burden of these delays is not equally distributed across demographic groups, highlighting systemic disparities within the criminal justice system.
+
+### Methodological Differences
+
+The analysis employed both Linear Mixed Models (LMM) and Generalized Estimating Equations (GEE), yielding some consistent and inconsistent findings. LMM provides interpretations that account for individual state-level variations, while GEE estimates effects across the entire population without focusing on state-by-state differences. These methodological distinctions mean that effect sizes and significance levels may differ between approaches, particularly when examining interaction effects. It is crucial to interpret the findings within the context of the specific modeling framework used.
+
+### Limitations
+
+Several critical limitations affected the interpretation of the findings regarding wrongful convictions:
+
+1. **Selection Bias**: The analysis is based on documented exonerations, likely overlooking many undocumented cases due to factors like insufficient resources and high evidentiary standards.
+
+2. **Uneven Sample Sizes**: The varying sizes across demographic categories can lead to overestimation of effect sizes and impact the reliability of results, particularly for underrepresented groups.
+
+3. **Neglected Factors**: Important influences on exoneration duration, such as false confessions and the advancements in DNA testing, were not accounted for in the analysis.
+
+Overall, while the findings highlight trends in the exoneration process, recognizing these limitations is essential for guiding future research and advocacy on wrongful convictions.
+
+**Note**
+
+Grammarly contributed to this text by responding to these AI prompts:
+
+Prompts I wrote:
+
+- "make more academic"
+- "Improve it"
+- "Summarize it"
+
+## Appendix: Statistical Code
+
+### Model Setup and Comparison Functions
+
+### Sex Models
+
+```{r sex-models}
+# Linear Mixed Effects Models
+mod_sex1 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_sex2 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_sex3 <- lme(time_to_exoneration ~ years_since_1989 * sex,
+                data = longitudinal_data_clean, method = "ML",
+                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+sex_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * sex, 
+                      data = longitudinal_data_clean, 
+                      id = corrected_state, 
+                      corstr = "Exchangeable")
+```
+
+### Sex Results Tables
+
+```{r sex-lmm-table}
+# Extract fixed effects summary
+fixed_effects_df <- as.data.frame(summary(mod_sex2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+# Get confidence intervals
+ci <- nlme::intervals(mod_sex2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("CI Lower", "CI Upper")
+
+# Combine results
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+
+kable(fixed_effects_full, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r sex-gee-table}
+tab_model(sex_mod_glm, title = "GEE Model - Sex as Predictor")
+```
+
+### Race Models
+
+```{r race-models}
+# Linear Mixed Effects Models
+mod_race1 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_race2 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_race3 <- lme(time_to_exoneration ~ years_since_1989 * race,
+                 data = longitudinal_data_clean, method = "ML",
+                 random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+race_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * race, 
+                       data = longitudinal_data_clean, 
+                       id = corrected_state, 
+                       corstr = "Exchangeable")
+```
+
+### Race Results Tables
+
+```{r race-lmm-table}
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_race2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_race2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r race-gee-table}
+tab_model(race_mod_glm, title = "GEE Model - Race as Predictor")
+```
+
+### Age Group Models
+
+```{r age-models}
+# Linear Mixed Effects Models
+mod_age_group1 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_age_group2 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_age_group3 <- lme(time_to_exoneration ~ years_since_1989 * age_group,
+                      data = longitudinal_data_clean, method = "ML",
+                      random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+age_group_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * age_group, 
+                            data = longitudinal_data_clean, 
+                            id = corrected_state, 
+                            corstr = "Exchangeable")
+```
+
+### Age Group Results Tables
+
+```{r age-lmm-table}
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_age_group2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_age_group2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r age-gee-table}
+tab_model(age_group_mod_glm, title = "GEE Model - Age Group as Predictor")
+```
+
+### Crime Type Models
+
+```{r crime-models}
+# Linear Mixed Effects Models
+mod_crime_type1 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type2 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type3 <- lme(time_to_exoneration ~ years_since_1989 * crime_type,
+                       data = longitudinal_data_clean, method = "ML",
+                       random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+crime_type_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * crime_type, 
+                             data = longitudinal_data_clean, 
+                             id = corrected_state, 
+                             corstr = "Exchangeable")
+```
+
+### Crime Type Results Tables
+
+```{r crime-lmm-table}
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_crime_type2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_crime_type2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r crime-gee-table}
+tab_model(crime_type_mod_glm, title = "GEE Model - Crime Type as Predictor")
+```
+
+### Jurisdiction Models
+
+```{r jurisdiction-models}
+# Linear Mixed Effects Models
+mod_jurisdiction_type1 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_jurisdiction_type2 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_jurisdiction_type3 <- lme(time_to_exoneration ~ years_since_1989 * jurisdiction,
+                              data = longitudinal_data_clean, method = "ML",
+                              random = reStruct(~1 + years_since_1989| corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model
+jurisdiction_mod_glm <- glmgee(time_to_exoneration ~ years_since_1989 * jurisdiction, 
+                               data = longitudinal_data_clean, 
+                               id = corrected_state, 
+                               corstr = "Exchangeable")
+```
+
+### Jurisdiction Results Tables
+
+```{r jurisdiction-lmm-table}
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_jurisdiction_type2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_jurisdiction_type2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r jurisdiction-gee-table}
+tab_model(jurisdiction_mod_glm, title = "GEE Model - Jurisdiction as Predictor")
+```
+
+### Crime Type with Demographic Controls
+
+```{r crime-extended-models}
+# Linear Mixed Effects Models with controls
+mod_crime_type_extended1 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type_extended2 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 + years_since_1989 | corrected_state, pdClass = "pdDiag", REML = FALSE))
+
+mod_crime_type_extended3 <- lme(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex,
+                                data = longitudinal_data_clean, method = "ML",
+                                random = reStruct(~1 + years_since_1989| corrected_state, pdClass = "pdSymm", REML = FALSE))
+
+# GEE Model with controls
+crime_type_extended_glm <- glmgee(time_to_exoneration ~ years_since_1989 * crime_type + age + race + sex, 
+                                  data = longitudinal_data_clean, 
+                                  id = corrected_state, 
+                                  corstr = "Exchangeable")
+```
+
+### Crime Type Extended Results Tables
+
+```{r crime-extended-lmm-table}
+# Extract and process results
+fixed_effects_df <- as.data.frame(summary(mod_crime_type_extended2)$tTable)
+colnames(fixed_effects_df) <- c("Estimate", "Std. Error", "DF", "t-value", "p-value")
+
+ci <- nlme::intervals(mod_crime_type_extended2, which = "fixed")$fixed
+ci_df <- as.data.frame(ci)[, c("lower", "upper")]
+colnames(ci_df) <- c("95% CI Lower", "95% CI Upper")
+
+fixed_effects_full <- cbind(fixed_effects_df, ci_df)
+significant_effects <- fixed_effects_full[fixed_effects_full$`p-value` < 0.05, ]
+
+kable(significant_effects, digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                font_size = 10,
+                full_width = FALSE,
+                position = "center")
+```
+
+```{r crime-extended-gee-table}
+tab_model(crime_type_extended_glm, title = "GEE Model - Crime Type with Controls")
+```
+
+### Model Comparison Tables
+
+```{r model-comparison-tables}
+kable(compare_sex, caption = "Model Comparison for Sex", digits = 3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 8)
+
+kable(compare_race, caption = "Model Comparison for Race", digits = 3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 8)
+
+kable(compare_age_group, caption = "Model Comparison for Age Group", digits = 3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 8)
+
+kable(compare_crime_type, caption = "Model Comparison for Crime Type", digits = 3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 8)
+
+kable(compare_jurisdiction, caption = "Model Comparison for Jurisdiction", digits = 3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 8)
+```

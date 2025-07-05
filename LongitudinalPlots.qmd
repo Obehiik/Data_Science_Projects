@@ -1,0 +1,586 @@
+---
+title: "Wrongfully Convicted: Longitudinal Exploration of Time to Exoneration from Initial Conviction in the U.S."
+author: "Obehi Winnifred Ikpea"
+format:
+  dashboard:
+    scrolling: true
+    theme: darkly
+    nav-buttons: 
+      - icon: github
+        href: https://github.com/Obehiik/Data_Science_Projects
+        aria-label: Github
+      - icon: linkedin
+        href: https://www.linkedin.com/in/obehi-ikpea-7b860a1b9/
+        aria-label: Linkedin
+---
+
+```{r}
+#| label: load-packages and data preparation
+#| message: false
+#| echo: false
+#| warning: false
+# 📦 Core Data Manipulation & Visualization
+library(tidyverse)   # includes ggplot2, dplyr, tidyr, readr, etc.
+library(janitor)     # clean variable names
+library(labelled)    # for working with labelled data
+library(dplyr)
+library(rempsyc)
+# 📊 Visualization & Theming
+library(ggthemes)    # additional themes for ggplot2
+library(viridis)     # color scales
+library(ggh4x)       # ggplot extensions
+library(ggpubr)      # publication-ready plots
+library(GGally)      # ggpairs and more advanced plot types
+theme_set(theme_minimal() + theme(legend.position = "bottom")) # default plot theme
+
+# 📈 Statistical Modeling
+library(car)         # ANOVA, influence diagnostics
+library(Epi)         # confidence intervals for model predictions
+library(lme4)        # linear mixed-effects models
+library(lmerTest)    # p-values for lme4 models
+library(emmeans)     # estimated marginal means
+library(multcomp)    # multiple comparisons and CIs
+library(geepack)     # generalized estimating equations
+library(ggeffects)   # marginal effects plots
+library(nlme)
+library(texreg)
+library(parameters)
+library(nlme)       
+library(glmtoolbox)
+# 🧮 Summary Statistics
+library(rstatix)     # statistical tests and descriptive stats
+library(gtsummary)   # table summaries for regression and descriptive stats
+library(gt)          # display beautiful tables
+
+# 🧹 Data Cleaning & Handling
+library(readr)       # reading in data
+library(naniar)      # handling missing data
+library(lubridate)   # date handling
+library(usmap)       # map visualizations
+library(kableExtra)
+library(flexplot)
+library(flextable)
+library(parameters)
+publicspreadsheet <- read_csv("publicspreadsheet.csv") |> clean_names()
+
+project_data <- publicspreadsheet |>
+  mutate(
+    conviction_date = as_date(date_of_1st_conviction, format = "%m/%d/%Y"),
+    exoneration_date = as_date(date_of_exoneration, format = "%m/%d/%Y"),
+    int = interval(conviction_date, exoneration_date),
+    time_to_exoneration = round(time_length(int, "year"), 2)
+  )
+
+### 🔹 Classify Crime Types
+project_data <- project_data |>
+  mutate(
+    crime_type = case_when(
+      worst_crime_display %in% c("Murder", "Accessory to Murder", "Attempted Murder", "Manslaughter", 
+                                 "Assault", "Attempt, Violent", "Kidnapping", "Sexual Assault", 
+                                 "Child Sex Abuse", "Child Abuse", "Dependent Adult Abuse", 
+                                 "Other Violent Felony", "Other Violent Misdemeanor", 
+                                 "Menacing", "Threats", "Stalking", "Robbery") ~ "Person Crimes",
+      worst_crime_display %in% c("Theft", "Burglary/Unlawful Entry", "Arson", "Destruction of Property", 
+                                 "Possession of Stolen Property") ~ "Property Crimes",
+      worst_crime_display %in% c("Drug Possession or Sale", "Weapon Possession or Sale", 
+                                 "Immigration", "Supporting Terrorism", "Traffic Offense") ~ "Society Crimes",
+      worst_crime_display %in% c("Fraud", "Bribery", "Tax Evasion/Fraud", "Forgery", 
+                                 "Failure to Pay Child Support") ~ "White-collar Crimes",
+      worst_crime_display %in% c("Obstruction of Justice", "Official Misconduct", "Perjury", 
+                                 "Filing a False Report", "Sex Offender Registration", 
+                                 "Military Justice Offense") ~ "Justice System Crimes",
+      TRUE ~ "Other Crimes"
+    ),
+    crime_type = factor(
+      crime_type,
+      levels = c("Property Crimes", "Person Crimes", "White-collar Crimes", 
+                 "Society Crimes", "Justice System Crimes", "Other Crimes")
+    )
+  )
+
+# Set the reference level (optional: use the most frequent or baseline category)
+project_data$crime_type <- relevel(project_data$crime_type, ref = "Property Crimes")
+
+
+### 🔹 Recode State and Jurisdiction
+federal_map <- c(
+  "Fed-CA" = "California", "Fed-TX" = "Texas", "Fed-NY" = "New York",
+  "Fed-FL" = "Florida", "Fed-IL" = "Illinois", "Fed-MA" = "Massachusetts",
+  "Fed-WA" = "Washington", "Fed-MD" = "Maryland", "Fed-PA" = "Pennsylvania",
+  "Fed-VA" = "Virginia", "Fed-MI" = "Michigan", "Fed-NJ" = "New Jersey",
+  "Fed-CT" = "Connecticut", "Fed-OK" = "Oklahoma", "Fed-TN" = "Tennessee",
+  "Fed-OH" = "Ohio", "Fed-DE" = "Delaware", "Fed-MN" = "Minnesota",
+  "Fed-AZ" = "Arizona", "Fed-MT" = "Montana", "Fed-NV" = "Nevada",
+  "Fed-AL" = "Alabama", "Fed-NM" = "New Mexico", "Fed-KY" = "Kentucky",
+  "Fed-LA" = "Louisiana", "Fed-ND" = "North Dakota", "Fed-SD" = "South Dakota",
+  "Fed-DC" = "District of Columbia", "District of Columbia" = "District of Columbia",
+  "Fed-Military" = NA, "Puerto Rico" = NA, "Guam" = NA
+)
+
+valid_states <- state.name
+
+longitudinal_data_clean <- project_data |>
+  mutate(
+    corrected_state = case_when(
+      state %in% valid_states ~ state,
+      state %in% names(federal_map) ~ federal_map[state],
+      TRUE ~ NA_character_
+    ),
+    jurisdiction = case_when(
+      state %in% names(federal_map) ~ "Federal",
+      state %in% valid_states ~ "State",
+      TRUE ~ NA_character_
+    ),
+    state_abbr = state.abb[match(corrected_state, state.name)],
+    cluster_id = paste0(jurisdiction, "_", state_abbr)
+  ) 
+
+### 🔹 Race Recoding
+longitudinal_data_clean$race <- dplyr::recode(longitudinal_data_clean$race,
+  "Asian" = "Asian",
+  "Black" = "Black",
+  "Hispanic" = "Hispanic",
+  "White" = "White",
+  "Native American" = "Native American",
+  "Don't Know" = "Other",
+  "Other" = "Other"
+)
+
+# Optional: Convert to factor with order and reference level
+longitudinal_data_clean$race <- factor(
+  longitudinal_data_clean$race,
+  levels = c("White", "Black", "Hispanic", "Asian", "Native American", "Other")
+)
+
+
+
+
+### 🔹 Age Groups
+longitudinal_data_clean$age_group <- case_when(
+  longitudinal_data_clean$age <= 14 ~ "Childhood (0–14)",
+  longitudinal_data_clean$age >= 15 & longitudinal_data_clean$age <= 19 ~ "Adolescence (15–19)",
+  longitudinal_data_clean$age >= 20 & longitudinal_data_clean$age <= 29 ~ "Early Adulthood (20–29)",
+  longitudinal_data_clean$age >= 30 & longitudinal_data_clean$age <= 39 ~ "Mid Adulthood (30–39)",
+  TRUE ~ "Older Adulthood (40+)"
+)
+
+# Convert to ordered factor for modeling and plotting
+longitudinal_data_clean$age_group <- factor(
+  longitudinal_data_clean$age_group,
+  levels = c(
+    "Childhood (0–14)",
+    "Adolescence (15–19)",
+    "Early Adulthood (20–29)",
+    "Mid Adulthood (30–39)",
+    "Older Adulthood (40+)"
+  )
+)
+
+longitudinal_data_clean$exoneration_year<-year(project_data$exoneration_date)
+
+longitudinal_data_clean$conviction_year<-year(project_data$conviction_date)
+longitudinal_data_clean<-longitudinal_data_clean|>mutate_if(is.character, as.factor)
+longitudinal_data_clean$sex<-relevel(longitudinal_data_clean$sex, ref="Male")
+longitudinal_data_clean$race <- relevel(longitudinal_data_clean$race, ref = "Black")
+longitudinal_data_clean$jurisdiction <- relevel(longitudinal_data_clean$jurisdiction, ref = "State")
+longitudinal_data_clean$age_group <- relevel(longitudinal_data_clean$age_group, ref = "Early Adulthood (20–29)")
+longitudinal_data_clean$crime_type <- relevel(longitudinal_data_clean$crime_type, ref = "Person Crimes")
+
+longitudinal_data_clean<-longitudinal_data_clean|>select(age, age_group, sex, race, jurisdiction,crime_type, corrected_state,  conviction_year, exoneration_year, time_to_exoneration,worst_crime_display)|>drop_na()
+
+longitudinal_data_clean<-longitudinal_data_clean|>
+  mutate(years_since_1989 = exoneration_year - 1989)
+
+longitudinal_data_clean<-longitudinal_data_clean|>arrange(years_since_1989, corrected_state)
+```
+
+# About Project
+
+## Row {.flow}
+
+::: {.card title="About Project"}
+This dashboard offers a thorough exploratory analysis of the longitudinal patterns found in wrongful conviction data. For a complementary cross-sectional analysis, please refer to the companion dashboard at: [Cross-sectional Exploration](https://obehiikpea.quarto.pub/wrongfully-convicted-uncovering-the-stories-behind-us-exonerations/#about-project)
+
+To systematically investigate the temporal dynamics of exoneration processes, we used a multi-faceted visualization approach that captures both aggregate patterns and variations across jurisdictions in the data.
+
+**Mean Trajectory Analysis**: We created mean trajectory plots to illustrate the average time between initial conviction and exoneration for cases recorded since 1989. This analytical framework included both pooled trajectory visualizations and stratified analyses to assess how case-specific characteristics and demographic factors affect exoneration timelines.
+
+**Comparative State-Level Analysis**: Spaghetti plots were utilized to conduct a comparative analysis of exoneration trends across all U.S. states since 1989. This visualization method allowed us to identify state-specific patterns while also highlighting broader regional and national trends. We performed stratified analyses to explore how case-specific and demographic factors influence these temporal trajectories across different jurisdictions.
+
+**State Variability Assessment**: We generated state-specific trajectory plots using a faceted approach that includes all 50 states and the District of Columbia. This comprehensive visualization framework reveals within-state temporal variability in the conviction-to-exoneration interval, offering detailed insights into the jurisdictional differences that shape the exoneration process throughout the American legal system.
+
+Data Source: [The National Registry of Exonerations](https://www.law.umich.edu/special/exoneration/Pages/about.aspx)
+:::
+
+## Value Boxes {height="35%"}
+
+```{r}
+#| label: calculate-values
+lowest_exoneration_duration <- longitudinal_data_clean |>
+  filter(time_to_exoneration == min(time_to_exoneration)) |>
+  distinct(time_to_exoneration) |>
+  pull(time_to_exoneration)
+highest_exoneration_duration <- longitudinal_data_clean |>
+  filter(time_to_exoneration == max(time_to_exoneration)) |>
+  distinct(time_to_exoneration) |>
+  pull(time_to_exoneration)
+average_exoneration_duration <- longitudinal_data_clean |>
+  summarize(mean_duration = mean(time_to_exoneration, na.rm = TRUE)) |>
+  pull(mean_duration)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Lowest Exoneration Duration"
+#| icon: arrow-down-circle
+#| color: success
+list(
+  value = paste0(lowest_exoneration_duration, " years"),
+  caption = "Shortest time from conviction to exoneration"
+)
+
+```
+
+```{r}
+#| content: valuebox
+#| title: "Highest Exoneration Duration"
+#| icon: arrow-up-circle
+#| color: danger
+list(
+  value = paste0(highest_exoneration_duration, " years"),
+  caption = "Longest time from conviction to exoneration"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Average Exoneration Duration"
+#| icon: calculator
+#| color: secondary
+list(
+  value = paste0(round(average_exoneration_duration, 1), " years"),
+  caption = "Average time from conviction to exoneration"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Total States Analyzed"
+#| icon: map
+#| color: primary
+list(
+  value=paste0(length(unique(longitudinal_data_clean$corrected_state)), " States + District")
+)
+```
+
+# Mean Trajectory Plot
+
+## Row {height="50%"}
+
+## Overall
+
+```{r}
+#| label: fig-time-mean-conviction-to-exoneration
+#| fig-cap: Mean time from conviction to exoneration per year.
+summary_year <- longitudinal_data_clean |>
+  group_by(years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+# Identify lowest and highest mean_duration
+highlight_points <- summary_year |>
+  filter(mean_duration == min(mean_duration) | mean_duration == max(mean_duration)) |>
+  mutate(label = paste0("Year: ", years_since_1989, "\nMean: ", round(mean_duration, 2)))
+
+# Plot
+ggplot(summary_year, aes(x = years_since_1989, y = mean_duration)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(size = 2, color = "black", alpha = 0.3) +
+  geom_label(
+    data = highlight_points,
+    aes(label = label),
+    nudge_y = 0.5,
+    color = "white",
+    fill = "#d62728",
+    label.padding = unit(0.2, "lines"),
+    label.size = 0.3,
+    size = 3
+  ) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration Over Time",
+    x = "Years Since 1989",
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12)
+  )
+
+```
+
+## Stratified by Sex
+
+```{r}
+#| label: fig-time-by-sex
+#| fig-cap: "Mean time from conviction to exoneration by sex over years since 1989."
+summary_sex <- longitudinal_data_clean |>
+  group_by(sex, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+
+ggplot(summary_sex, aes(x = years_since_1989, y = mean_duration, group = sex, color = sex)) +
+  geom_line(linewidth = 1) + 
+  geom_point(aes(shape = sex), size = 2) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Sex Over Time",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)",
+    color = "Sex"
+  ) + 
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    legend.position = "bottom"
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2")  # <-- Match fill colors to the same palette
+
+```
+
+## Stratified by Race
+
+```{r}
+#| label: fig-time-by-race
+#| fig-cap: "Mean time from conviction to exoneration by race over years since 1989."
+summary_race <- longitudinal_data_clean |>
+  group_by(race, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+ggplot(summary_race, aes(x = years_since_1989, y = mean_duration, group = race, color = race)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = race), size = 2) +  labs(
+    title = "Mean Time from Conviction to Exoneration by Race",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Dark2")
+```
+
+## Stratified by Crime Type
+
+```{r}
+#| label: fig-time-by-crime
+#| fig-cap: "Mean time from conviction to exoneration by crime type over years since 1989."
+summary_crime_type <- longitudinal_data_clean |>
+  group_by(crime_type, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+
+ggplot(summary_crime_type, aes(x = years_since_1989, y = mean_duration, group = crime_type, color = crime_type)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = crime_type), size = 2) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Crime Type",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Paired")
+```
+
+## Stratified by Age Group
+
+```{r}
+#| label: fig-time-by-agegroup
+#| fig-cap: "Mean time from conviction to exoneration by age group over years since 1989."
+summary_age <- longitudinal_data_clean |>
+  group_by(age_group, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+
+ggplot(summary_age, aes(x = years_since_1989, y = mean_duration, group = age_group, color = age_group)) +
+  geom_line(linewidth = 1) +
+  geom_point(aes(shape = age_group), size = 2) +
+  labs(
+    title = "Mean Time from Conviction to Exoneration by Age Group",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) + theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1")
+```
+
+## Stratified By Case Type
+
+```{r}
+#| label: fig-time-by-Jurisdiction
+#| fig-cap: "Mean time from conviction to exoneration by Jurisdiction over years since 1989."
+summary_jurisdiction <- longitudinal_data_clean |>
+  group_by(jurisdiction, years_since_1989) |>
+  summarize(mean_duration = mean(time_to_exoneration), .groups = "drop")
+
+ggplot(summary_jurisdiction, aes(x = years_since_1989, y = mean_duration, group = jurisdiction, color = jurisdiction)) +
+  geom_line(linewidth = 1) + 
+  geom_point(aes(shape = jurisdiction), size = 2) +
+  
+   labs(
+    title = "Mean Time from Conviction to Exoneration by Jurisdiction",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) + 
+  theme_minimal(base_size = 10) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "bottom") +
+  scale_color_brewer(palette = "Set2")
+```
+
+# Spaghetti Plots
+
+## Overall Plot
+
+```{r}
+#| label: fig-time-overall
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration (All States)"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+  geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by State",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12)
+  ) +
+  scale_color_viridis_d(option = "C", begin = 0, end = 1)
+
+
+```
+
+## 
+
+```{r}
+#| label: fig-time-by-sex_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Sex"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+  facet_wrap(.~sex) +
+  geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Sex",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "B", begin = 0, end = 1)
+```
+
+## 
+
+```{r}
+#| label: fig-time-by-race_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Race"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, color=corrected_state)) +
+  facet_wrap(.~race) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Race",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "C")
+```
+
+## 
+
+```{r}
+#| label: fig-time-by-agegroup_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Age Group"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+ facet_wrap(.~age_group) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Age Group",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "D")
+```
+
+## 
+
+```{r}
+#| label: fig-time-by-crime_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Crime Type"
+ggplot(longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) +
+ facet_wrap(.~crime_type) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Crime Type",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "E")
+```
+
+## 
+
+```{r}
+#| label: fig-time-by-Jurisdiction_plot
+#| fig-cap: "Spaghetti Plot of Time from Conviction to Exoneration by Jurisdiction"
+ggplot(longitudinal_data_clean,  
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state, colour = corrected_state)) + 
+ facet_wrap(.~jurisdiction) + geom_line(alpha = 0.4, linewidth = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by Jurisdiction",
+    x = "Years Since 1989", 
+    y = "Time from Conviction to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+        legend.position = "none") +
+  scale_color_viridis_d(option = "F")
+```
+
+# State-Specifc Plot
+
+```{r}
+#| label: fig-time-by-state
+#| fig-cap: Time from Conviction to Exoneration by State
+#| fig-height: 10
+#| fig-width: 10
+ggplot(data = longitudinal_data_clean, 
+       aes(x = years_since_1989, y = time_to_exoneration, group = corrected_state)) +
+  facet_wrap(. ~ corrected_state, ncol = 6) + 
+  geom_line(alpha = 0.6, linewidth = 0.8, color = "#2D708EFF") +
+  geom_point(alpha = 0.6, color = "#2D708EFF", size = 0.8) +
+  labs(
+    title = "Time from Conviction to Exoneration by State",
+    x = "Years Since 1989", 
+    y = "Time to Exoneration (Years)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    strip.text = element_text(size = 8),
+    panel.spacing = unit(0.7, "lines")
+  )
+
+```
