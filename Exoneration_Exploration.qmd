@@ -79,7 +79,7 @@ federal_map <- c(
   "Fed-AZ" = "Arizona", "Fed-MT" = "Montana", "Fed-NV" = "Nevada",
   "Fed-AL" = "Alabama", "Fed-NM" = "New Mexico", "Fed-KY" = "Kentucky",
   "Fed-LA" = "Louisiana", "Fed-ND" = "North Dakota", "Fed-SD" = "South Dakota",
-  "Fed-DC" = "District of Columbia", "District of Columbia" = "District of Columbia",
+  "Fed-DC" = NA, "District of Columbia" = NA,  # DC excluded from state count
   "Fed-Military" = NA, "Puerto Rico" = NA, "Guam" = NA
 )
 
