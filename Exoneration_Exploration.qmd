@@ -169,7 +169,7 @@ This project provides comprehensive exploratory analyses of the demographic and 
 
 In addition to these characteristics, we investigated the associations between demographics and crime types to explore how patterns of wrongful convictions vary across different groups. We also implemented trend analyses to examine how the duration between initial conviction and exoneration has changed over time — from the first recorded year of exoneration in 1989 to the most recent in 2024.
 
-After data preparation, the dataset used in these analyses consists of **3450** individuals, drawn from the National Registry of Exonerations.
+After data preparation, the dataset used in these analyses consists of **3425** individuals, drawn from the National Registry of Exonerations.
 
 To facilitate clearer analysis, individual offenses listed under `worst_crime_display` were grouped into broader categories based on the nature and legal context of each crime:
 
