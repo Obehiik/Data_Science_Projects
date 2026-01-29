@@ -277,7 +277,7 @@ Preliminary exploratory analysis revealed a positively skewed age distribution, 
 
 **Final Dataset**
 
-After data cleaning and variable construction, the analytical dataset comprised 3,4 cases in 11 variables. The reduction from 3,497 to 3,425 cases (1.3% attrition) resulted from the exclusion of records with missing or incomplete data essential for the primary analyses.
+After data cleaning and variable construction, the analytical dataset comprised 3,425 cases in 11 variables. The reduction from 3,497 to 3,425 cases resulted from the exclusion of records with missing or incomplete data essential for the primary analyses.
 
 ### Exploratory Data Analysis
 
