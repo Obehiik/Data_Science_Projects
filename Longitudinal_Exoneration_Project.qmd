@@ -143,7 +143,7 @@ federal_map <- c(
   "Fed-AZ" = "Arizona", "Fed-MT" = "Montana", "Fed-NV" = "Nevada",
   "Fed-AL" = "Alabama", "Fed-NM" = "New Mexico", "Fed-KY" = "Kentucky",
   "Fed-LA" = "Louisiana", "Fed-ND" = "North Dakota", "Fed-SD" = "South Dakota",
-  "Fed-DC" = "District of Columbia", "District of Columbia" = "District of Columbia",
+  "Fed-DC" = NA, "District of Columbia" = NA,  # DC excluded from state count
   "Fed-Military" = NA, "Puerto Rico" = NA, "Guam" = NA
 )
 
@@ -277,7 +277,7 @@ Preliminary exploratory analysis revealed a positively skewed age distribution, 
 
 **Final Dataset**
 
-After data cleaning and variable construction, the analytical dataset comprised 3,450 cases in 11 variables. The reduction from 3,497 to 3,450 cases (1.3% attrition) resulted from the exclusion of records with missing or incomplete data essential for the primary analyses.
+After data cleaning and variable construction, the analytical dataset comprised 3,4 cases in 11 variables. The reduction from 3,497 to 3,425 cases (1.3% attrition) resulted from the exclusion of records with missing or incomplete data essential for the primary analyses.
 
 ### Exploratory Data Analysis
 
@@ -320,7 +320,7 @@ To examine the longitudinal structure of the data, we developed several speciali
 
 - **Spaghetti plots** were employed to visually compare the trends in time to exoneration across different states in the United States since 1989. Furthermore, stratified plots were developed to explore how unique case-specific and demographic factors impact these trajectories.
 
-- **State-specific trajectory plots** were generated faceted by state for all 50 states and the District of Columbia. These plots highlight the within-state variability in the duration from initial conviction to exoneration, providing an in-depth analysis of the temporal aspects of the exoneration process across various jurisdictions.
+- **State-specific trajectory plots** were generated faceted by state for all 50 U.S. states. These plots highlight the within-state variability in the duration from initial conviction to exoneration, providing an in-depth analysis of the temporal aspects of the exoneration process across various jurisdictions.
 
 These visualizations uncovered significant patterns in exoneration timelines, effectively addressing the clustered nature of the data and enriching our understanding of wrongful conviction trends within the United States justice system.
 
@@ -388,7 +388,7 @@ Where:
 -   $Y_{ij}$:  Time to exoneration for state $i$ in year $j$
 -   $T_{j}$: Years since 1989 (baseline year)
 -   $X_{ij}$: Covariate of interest for state $i$ in year $j$ (e.g., proportion of cases by sex, race, crime type, age group, or jurisdiction type)
--   $i$: Index for **state** (cluster), $i = 1, 2, ..., 51$ (50 states + DC)
+-   $i$: Index for **state** (cluster), $i = 1, 2, ..., 50$ (50 U.S. states)
 -   $j$: Index for **year** within each state cluster, $j = 1989, 1990, ..., 2024$
 
  Separate models were fit for each covariate. Wald tests were used to assess:
@@ -407,8 +407,8 @@ This section presents findings from exploratory data analysis and statistical as
 
 The quarto dashboard provided a comprehensive cross-sectional overview of the variables in the exoneration dataset. The visualizations were organized into three categories: Univariate distributions, Bivariate distributions and associations, and Trend visualizations. This structure allowed for effective analysis of the data. Notable observations include:
 
-- The average time from initial conviction to exoneration was 12.3 years with the histogram being positively skewed.
-- The average age of the convicted then exonerated individuals was 28.3 years with a positively skewed distribution.
+- The average time from initial conviction to exoneration was 12.2 years with the histogram being positively skewed.
+- The average age of the exonerated individuals was 28.3 years with a positively skewed distribution.
 - Males comprised the majority of exoneration cases (over 90%), with particularly high representation in person crimes (93%) and justice system crimes (94%).
 - The 20-29 year old age group comprised the majority of exoneration cases (over 40%), with early adulthood (20-29) representing 45% of person crimes exonerations, and 46% of society crimes.
 - Black individuals were disproportionately represented in exoneration cases, accounting for 53% of the total, with particularly high representation in society crimes (69%) and person crimes (52%).
@@ -659,14 +659,6 @@ ggplot(summary_jurisdiction, aes(x = years_since_1989, y = mean_duration, group 
 ```
 ::::
 
-**Discussion**
-
-In the United States, there has been a significant increase in the average duration from conviction to exoneration over the years. Since 1989, the average time has fluctuated, with the shortest average recorded at 4.66 years just three years after the baseline, while the longest reached an average of 20.41 years, occurring 35 years later.
-
-When breaking down the data by sex, it was revealed that patterns varied. At the beginning, there was no average time to exoneration documented for females, which limited comparisons in the early years. However, over time, males had a lower average of 4.66 years three years post-baseline, while females showed a lower average of 2.21 years, observed 18 years after the baseline. The peak average for males was 21.24 years at the 35-year mark, while the peak for females was 14.82 years, recorded 33 years post-baseline.
-
-Examining the data by jurisdiction, it was noted that federal cases often reported shorter average times compared to state cases, especially in the early years. Federal cases had a minimum average of just 0.76 years one year post-baseline, while state cases reached a minimum of 4.8 years three years after the baseline. However, federal cases also recorded a maximum average of 25.21 years at 31 years post-baseline, while state cases peaked at 21.31 years after 35 years. Overall, state cases generally exhibited higher average times throughout most of the study, although there were instances where federal cases surpassed them.
-
 2.  **Spaghetti Plots:**
 
 ::: {layout-ncol="2"}
@@ -783,11 +775,6 @@ ggplot(longitudinal_data_clean,
 ```
 :::
 
-**Discussion**
-
-The spaghetti plot illustrates temporal trends in the duration from initial conviction to exoneration across various states in the United States. Each line, differentiated by color, represents a distinct state, thereby enabling assessments of state-level variations over time. In 1989, we identified notable disparities in the time from initial conviction to exoneration among states, indicating a progression in these differences.
-
-
 3.  **State-Specific Plots:**
 
 ```{r}
@@ -814,11 +801,6 @@ ggplot(data = longitudinal_data_clean,
 
 
 ```
-
-**Discussion**
-
-The state-specific analysis revealed significant variability both between and within states regarding the time required for exoneration over the 35 years since 1989. States such as Illinois, Texas, New York, and California displayed consistent patterns of exonerations, accompanied by considerable variations in duration; many cases took over 20 years to resolve. Conversely, other states reported sparse data, with fewer exonerations and more variable patterns of exoneration. While certain states yielded sufficient observations to facilitate a clearer understanding of temporal trends, others contributed as few as three observations throughout the entire study period, which hindered our ability to examine within-state variation thoroughly. Overall, these findings highlighted the persistent and unequal impact of wrongful convictions in the United States.
-
 
 ### Statistical Analyses
 
@@ -1287,7 +1269,7 @@ tab_model(crime_type_extended_glm, title = "GEE Model - Crime Type with Controls
 
 ## Discussion
 
-The United States often identifies itself as the "Land of the Free," yet since 1989, there have been over 3,000 exonerations in the country. Innocent individuals have been wrongfully convicted of crimes of varying severity. This alarming statistic reflects a significant loss of years, leading to profound emotional, physical, and social instability for many. By utilizing data from 3,450 exonerees documented in the National Registry of Exonerations, this project aimed to analyze how the duration between initial conviction and eventual exoneration has evolved in the United States, alongside the influence of various factors such as demographics, crime types, and case characteristics. The demographic factors considered included the age of the exonerees at the time of conviction, as well as their sex and race. Case characteristics examined consisted of the type of crime and the jurisdiction involved.
+The United States often identifies itself as the "Land of the Free," yet since 1989, there have been over 3,000 exonerations in the country. Innocent individuals have been wrongfully convicted of crimes of varying severity. This alarming statistic reflects a significant loss of years, leading to profound emotional, physical, and social instability for many. By utilizing data from 3,425 exonerees documented in the National Registry of Exonerations, this project aimed to analyze how the duration between initial conviction and eventual exoneration has evolved in the United States, alongside the influence of various factors such as demographics, crime types, and case characteristics. The demographic factors considered included the age of the exonerees at the time of conviction, as well as their sex and race. Case characteristics examined consisted of the type of crime and the jurisdiction involved.
 By analyzing factors such as race, age, sex, crime type, and jurisdiction, we identified patterns that may influence the duration it takes wrongfully convicted individuals to achieve exoneration.
 
 The cross-sectional exploratory analysis of the data revealed significant differences in the characteristics of exonerees. Specifically, individuals spent an average of 12.3 years from conviction to exoneration, with a mean age of 28.3 years at the time of conviction. Males accounted for over 90% of exonerations, particularly in cases involving crimes against people (93%) and justice system crimes (94%). The age group of 20-29 years old represented over 40% of cases, while Black individuals constituted 53% of exonerees, especially in society crimes (69%) and crimes against people (52%). Most exonerations occurred at the state level, with crimes against people representing over 72% of the total cases (2,508 in total). The time required for exoneration varied by crime type, averaging 14.34 years for crimes against people and 4.10 years for justice system crimes. White-collar crimes had a higher proportion of white defendants (75%) and were predominantly federal cases (69%).
@@ -1323,6 +1305,7 @@ Prompts I wrote:
 - "make more academic"
 - "Improve it"
 - "Summarize it"
+
 
 ## Appendix: Statistical Code
 
